@@ -91,8 +91,8 @@ if (($user['role'] ?? '') !== 'admin' && !empty($user['plant_id']) && isset($pla
 </div>
 </header>
 
-<div class="p-4 sm:p-6 w-full flex flex-col gap-6 max-w-[1650px] mx-auto">
-<div class="grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6">
+<div class="p-4 sm:p-6 lg:p-8 w-full flex flex-col gap-6 lg:gap-8 max-w-[1920px] mx-auto">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Live Power</h3>
 <p id="comb_power" class="font-black text-slate-800 text-3xl">-- <span class="text-sm font-bold text-blue-600">kW</span></p>
