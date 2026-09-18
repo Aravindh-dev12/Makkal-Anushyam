@@ -687,28 +687,41 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         async function generateReportData() {
+            currentReportSection = getReportSection();
             const type = document.getElementById('reportType').value;
             const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
             const plant = plantSelect.value || 'vinoba-velliyanai';
-            const dateObj = new Date(type==='daily'?selectedDate:selectedDate+'-01');
-            const options = type==='daily'?{year:'numeric',month:'long',day:'numeric'}:{year:'numeric',month:'long'};
+            const dateObj = new Date(type === 'daily' ? selectedDate : selectedDate + '-01');
+            const options = type === 'daily' ? {year:'numeric',month:'long',day:'numeric'} : {year:'numeric',month:'long'};
             document.getElementById('displayDate').innerText = dateObj.toLocaleDateString('en-IN', options);
+            document.getElementById('reportHeaderPlantName').innerText = (plantMeta[plant]?.name || plant).toUpperCase() + ' SOLAR ENERGY';
+
             const tbody = document.getElementById('reportTableBody');
-            tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Fetching...</p></div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Fetching real telemetry...</p></div></td></tr>';
+
+            if (currentReportSection === 'wmas') {
+                lastReportData = null;
+                weatherBuckets = {};
+                if (type === 'daily' && selectedDate === new Date().toISOString().split('T')[0]) {
+                    connectReportWS();
+                    if (!requestWmasDailyHistory()) setTimeout(requestWmasDailyHistory, 800);
+                } else {
+                    try {
+                        await fetchReportFromAPI();
+                    } catch (err) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center"><div class="text-red-500 font-bold mb-1">Data Error</div><div class="text-gray-400 text-xs">' + err.message + '</div></td></tr>';
+                    }
+                }
+                return;
+            }
 
             pendingReportRequest = true;
             connectReportWS();
+            if (!sendReportRequest()) setTimeout(() => sendReportRequest(), 800);
 
-            // Try sending WebSocket request immediately or wait for connection
-            if (!sendReportRequest()) {
-                setTimeout(() => sendReportRequest(), 1200);
-            }
-
-            // Fallback to API if WebSocket does not respond in 4.5 seconds
             if (wsReportTimeout) clearTimeout(wsReportTimeout);
             wsReportTimeout = setTimeout(() => {
                 if (pendingReportRequest) {
-                    console.log('WS report timeout, falling back to API');
                     pendingReportRequest = false;
                     fetchReportFromAPI().catch(err => {
                         tbody.innerHTML = '<tr><td colspan="30" class="py-10 text-center"><div class="text-red-500 font-bold mb-1">Data Error</div><div class="text-gray-400 text-xs">' + err.message + '</div></td></tr>';
@@ -716,6 +729,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 }
             }, 4500);
         }
+
 
         function fmt(v) { return v !== undefined && v !== null ? Number(v).toFixed(2) : '0.00'; }
 
@@ -745,7 +759,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             
             const opt = {
                 margin: 8,
-                filename: `vinoba_report_${plantSelect.value}_${dateInput.value}.pdf`,
+                filename: `vinoba_${currentReportSection}_report_${plantSelect.value}_${document.getElementById('reportType').value === 'daily' ? dateInput.value : monthInput.value}.pdf`,
                 image: { type: 'jpeg', quality: 0.98 },
                 html2canvas: { 
                     scale: 2, 
@@ -764,48 +778,57 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         function downloadJson() {
-            if (!lastReportData || !lastReportData.data) return;
+            if (!lastReportData || !Array.isArray(lastReportData.data)) return;
             const type = document.getElementById('reportType').value;
             const date = type === 'daily' ? dateInput.value : monthInput.value;
-            const plant = plantSelect.value;
+            const plant = plantSelect.value || 'vinoba-velliyanai';
             const plantName = plantMeta[plant] ? plantMeta[plant].name : plant;
             const rows = lastReportData.data;
 
-            let invNames = lastReportData.meta ? lastReportData.meta.inv_names : null;
-            if (!invNames || !invNames.length) {
-                invNames = [];
-                for (let i = 1; i <= 12; i++) {
-                    if (rows.some(r => (r['inv'+i+'_kwh']||0) > 0)) invNames.push('INV-'+i);
+            let columns;
+            let filename;
+            if (currentReportSection === 'wmas') {
+                columns = [
+                    type === 'daily' ? 'Time' : 'Date',
+                    'Solar Radiation (W/m²)', 'Panel Temp (°C)', 'Ambient Temp (°C)',
+                    'Wind Speed (m/s)', 'Humidity (%)'
+                ];
+                filename = `vinoba_wmas_report_${plant}_${date}.json`;
+            } else {
+                let invNames = lastReportData.meta ? lastReportData.meta.inv_names : null;
+                if (!invNames || !invNames.length) {
+                    invNames = [];
+                    for (let i = 1; i <= 12; i++) {
+                        if (rows.some(r => Number(r['inv'+i+'_kwh']) > 0)) invNames.push('INV-' + i);
+                    }
                 }
-                if (!invNames.length) invNames = ['INV-1','INV-2','INV-3','INV-4','INV-5','INV-6','INV-7'];
+                columns = [type === 'daily' ? 'Time' : 'Date'];
+                invNames.forEach(name => columns.push(name + ' (kWh)'));
+                columns.push('Inverter Total (kWh)', 'HT Panel VCB (kWh)', 'TX Loss (kWh)');
+                filename = `vinoba_inverter_report_${plant}_${date}.json`;
             }
-            
-            const columns = [
-                type === 'daily' ? 'Time' : 'Date',
-                'Solar Radiation (W/m²)', 'Panel Temp (°C)', 'Ambient Temp (°C)', 'Wind Speed (m/s)', 'Humidity (%)'
-            ];
-            invNames.forEach(name => columns.push(name + ' (kWh)'));
-            columns.push('Inverter Total (kWh)', 'HT Panel VCB (kWh)', 'TX Loss (kWh)');
 
             const exportData = {
+                report_section: currentReportSection,
                 plant_id: plant,
                 plant_name: plantName,
                 report_type: type,
-                date: date,
-                columns: columns,
-                rows: rows
+                date,
+                source: lastReportData.meta?.source || (currentReportSection === 'wmas' ? 'WMAS/WMOS telemetry' : 'Inverter/electrical telemetry'),
+                columns,
+                rows
             };
-            
-            const filename = `vinoba_unified_report_${plant}_${date}.json`;
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = filename;
             document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         }
 
+
         loadSidebar();
-        connectReportWS();
-        setTimeout(() => { generateReportData(); startAutoRefresh(); }, 500);
+        toggleInputs();
+        toggleReportSection();
+
         window.addEventListener('beforeunload', () => { stopAutoRefresh(); if (ws) ws.close(); });
     </script>
 </body>
