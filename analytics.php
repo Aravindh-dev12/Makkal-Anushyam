@@ -483,10 +483,17 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             if (!weatherSignal || (/inverter|^inv\b/.test(context) && !/(?:^|\s)(?:wmos|wmas|weather)(?:\s|$)/.test(context))) return false;
 
             const rad = readWmosMetricValue(values, ['raw data', 'radiation', 'solar radiation', 'irradiance'], [/^raw data$/, /radiation/, /irradiance/, /pyran/]);
-            const panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/]);
-            const ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
-            const wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'Wind Speed'], [/wind.*speed/, /^windspeed$/]);
-            const humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
+            let panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/, /^temp data$/]);
+            let ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
+            let wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'Wind Speed'], [/wind.*speed/, /^windspeed$/]);
+            let humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
+
+            // Match Makkal Home's device-context fallbacks for generic sensor keys.
+            const deviceText = normalizeWmosMetricName(device);
+            if (panel === null && /pannel|panel|module/.test(deviceText)) panel = readWmosMetricValue(values, [], [/temp/]);
+            if (ambient === null && /ambient/.test(deviceText)) ambient = readWmosMetricValue(values, [], [/temp/]);
+            if (wind === null && /wind/.test(deviceText)) wind = readWmosMetricValue(values, [], [/wind|speed/]);
+            if (humidity === null && /humid/.test(deviceText)) humidity = readWmosMetricValue(values, [], [/hum/]);
 
             let updated = false;
             if (rad !== null) { setWmosPanelValue('wmos_rad', rad, 0); recordWmosHistory('wmos:pyranometer', rad, sourceTime, device || 'Pyranometer'); updated = true; }
