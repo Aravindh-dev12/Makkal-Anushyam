@@ -1,38 +1,12 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require 'check_auth.php';
 
-$token = '';
-if (!empty($_GET['token'])) {
-    $token = trim((string)$_GET['token']);
-} elseif (!empty($_COOKIE['vs_token'])) {
-    $token = trim((string)$_COOKIE['vs_token']);
-} elseif (!empty($_SESSION['vs_token'])) {
-    $token = trim((string)$_SESSION['vs_token']);
-}
-
-$adminUser = null;
-if (!empty($token)) {
-    require_once __DIR__ . '/config.php';
-    if (isset($conn) && $conn instanceof mysqli) {
-        $safeToken = $conn->real_escape_string($token);
-        $res = $conn->query("SELECT * FROM users WHERE auth_token = '$safeToken' LIMIT 1");
-        if ($res && $res->num_rows > 0) {
-            $adminUser = $res->fetch_assoc();
-            $_SESSION['vs_token'] = $token;
-            $_SESSION['user'] = $adminUser;
-            if (empty($_COOKIE['vs_token']) || $_COOKIE['vs_token'] !== $token) {
-                setcookie('vs_token', $token, time() + (86400 * 30), '/');
-            }
-        }
-    }
-}
-if (!$adminUser || $adminUser['role'] !== 'admin') {
-    setcookie('vs_token', '', time() - 3600, '/');
-    header('Location: index.php');
+if (($user['role'] ?? '') !== 'admin') {
+    header('Location: home.php?plant=' . urlencode((string)($user['plant_id'] ?? 'vinoba-velliyanai')));
     exit;
 }
+
+$adminUser = $user;
 ?>
 <!DOCTYPE html>
 <html lang="en">
