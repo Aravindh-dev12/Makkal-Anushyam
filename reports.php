@@ -433,67 +433,59 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 ws = new WebSocket(wsUrl);
                 ws.onopen = () => {
                     wsConnected = true;
-                    // Always subscribe to vinoba-velliyanai for weather sensors
                     ws.send(JSON.stringify({ type: 'subscribe', unit_id: 'vinoba-velliyanai' }));
                     const curP = plantSelect.value || 'vinoba-velliyanai';
-                    if (curP !== 'vinoba-velliyanai') {
-                        ws.send(JSON.stringify({ type: 'subscribe', unit_id: curP }));
-                    }
-                    if (pendingReportRequest) sendReportRequest();
+                    if (curP !== 'vinoba-velliyanai') ws.send(JSON.stringify({ type: 'subscribe', unit_id: curP }));
+                    if (pendingReportRequest && currentReportSection === 'inverter') sendReportRequest();
+                    if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily') requestWmasDailyHistory();
                 };
                 ws.onmessage = (e) => {
                     try {
                         const d = JSON.parse(e.data);
+                        const taskStr = String(d.task || d.pageName || '').toLowerCase();
+                        const devStr = String(d.device || d.deviceName || '').toLowerCase();
+
+                        // Always capture real WMAS/WMOS telemetry before any unit filtering.
+                        if (d.values && typeof d.values === 'object') {
+                            captureLiveWeatherValues(d.values, d.device || d.deviceName || '', d.task || d.pageName || '', d.time || d.timestamp || d.ts || '');
+                        }
+                        if (Array.isArray(d.data)) {
+                            d.data.forEach(row => {
+                                if (!row || typeof row !== 'object') return;
+                                const rowValues = row.values && typeof row.values === 'object' ? row.values : row;
+                                captureLiveWeatherValues(rowValues, row.device || row.deviceName || d.device || '', row.task || row.pageName || d.task || '', row.time || row.timestamp || row.ts || d.time || '');
+                            });
+                        }
+
                         if (d.type === 'daily_data_result' && Array.isArray(d.data)) {
                             handleWSDailyWeather(d.data);
                             return;
                         }
-                        const reportTypes = ['report_data','generate_report','generate_report_result','report','report_result','report_generated'];
-                        if (reportTypes.includes(d.type) || d.columns || d.rows) {
-                            handleWSReportResponse(d);
-                            return;
-                        }
 
-                        // Weather live telemetry capture
-                        const taskStr = (d.task || '').toString().toLowerCase();
-                        const devStr = (d.device || '').toString().toLowerCase();
-                        if (d.values && (taskStr === 'wmos' || taskStr === 'weather' || devStr.includes('pyran') || devStr.includes('pannel') || devStr.includes('ambient') || devStr.includes('wind') || devStr.includes('humid'))) {
-                            for (const k in d.values) {
-                                const kl = k.toLowerCase();
-                                const val = parseFloat(d.values[k]) || 0;
-                                if (/rad|raw data|irradiance/i.test(kl) || devStr.includes('pyran')) liveWeather.rad = val;
-                                if (/pannel|panel/i.test(kl) || devStr.includes('pannel')) liveWeather.ptemp = val;
-                                if (/ambient/i.test(kl) || devStr.includes('ambient')) liveWeather.atemp = val;
-                                if (/wind/i.test(kl) || devStr.includes('wind')) liveWeather.wind = val;
-                                if (/humid/i.test(kl) || devStr.includes('humid')) liveWeather.hum = val;
-                            }
-                            if (lastReportData && Array.isArray(lastReportData.data)) {
-                                const type = document.getElementById('reportType').value;
-                                const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
-                                const todayStr = new Date().toISOString().split('T')[0];
-                                if (type === 'daily' && selectedDate === todayStr) {
-                                    const curSlot = slot15Min(new Date().toTimeString().slice(0,5));
-                                    const targetRow = lastReportData.data.find(r => r.time_label === curSlot) || lastReportData.data[lastReportData.data.length - 1];
-                                    if (targetRow) {
-                                        let upd = false;
-                                        if (liveWeather.rad > 0 && targetRow.radiation !== liveWeather.rad) { targetRow.radiation = liveWeather.rad; upd = true; }
-                                        const p = liveWeather.ptemp > 0 ? liveWeather.ptemp : liveWeather.atemp;
-                                        if (p > 0 && targetRow.panel_temp !== p) { targetRow.panel_temp = p; upd = true; }
-                                        if (liveWeather.atemp > 0 && targetRow.ambient_temp !== liveWeather.atemp) { targetRow.ambient_temp = liveWeather.atemp; upd = true; }
-                                        if (liveWeather.wind > 0 && targetRow.wind_speed !== liveWeather.wind) { targetRow.wind_speed = liveWeather.wind; upd = true; }
-                                        if (liveWeather.hum > 0 && targetRow.humidity !== liveWeather.hum) { targetRow.humidity = liveWeather.hum; upd = true; }
-                                        if (upd) {
-                                            renderReportData(type, lastReportData.data, lastReportData.meta ? lastReportData.meta.inv_names : null);
-                                        }
-                                    }
-                                }
-                            }
+                        if (currentReportSection === 'inverter') {
+                            const reportTypes = ['report_data','generate_report','generate_report_result','report','report_result','report_generated'];
+                            if (reportTypes.includes(d.type) || d.columns || d.rows) handleWSReportResponse(d);
+                        } else if (currentReportSection === 'wmas' && d.values) {
+                            renderWmasLiveRow();
                         }
-                    } catch(err) { console.error('Reports WS parse error', err); }
+                    } catch(err) {
+                        console.error('Reports WS parse error', err);
+                    }
                 };
-                ws.onclose = () => { wsConnected = false; setTimeout(connectReportWS, 5000); };
-                ws.onerror = (err) => { wsConnected = false; };
+                ws.onclose = () => { wsConnected = false; setTimeout(connectReportWS, 3000); };
+                ws.onerror = () => { wsConnected = false; };
             } catch(err) { console.error('WS connect failed', err); }
+        }
+
+
+        function requestWmasDailyHistory() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+            const selectedDate = dateInput.value;
+            const weatherDevs = ['Pyranometer', 'pannel temperature', 'Ambient Temperature', 'Wind', 'Humidity'];
+            weatherDevs.forEach(dev => {
+                ws.send(JSON.stringify({ type: 'get_daily_data', unit_id: 'vinoba-velliyanai', device: dev, date: selectedDate }));
+            });
+            return true;
         }
 
         function sendReportRequest() {
@@ -501,58 +493,21 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const plant = plantSelect.value || 'vinoba-velliyanai';
             const type = document.getElementById('reportType').value;
             const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
+
+            if (currentReportSection === 'wmas') {
+                if (type === 'daily') {
+                    ws.send(JSON.stringify({ type: 'subscribe', unit_id: 'vinoba-velliyanai' }));
+                    return requestWmasDailyHistory();
+                }
+                return false;
+            }
+
             const pageName = type === 'daily' ? 'inverter&vcb-daily' : 'inverter&vcb-monthly';
             ws.send(JSON.stringify({ type: 'subscribe', unit_id: plant }));
-            ws.send(JSON.stringify({ type: 'generate_report', unit_id: plant, pageName: pageName, date: selectedDate }));
-
-            // For daily reports, also fetch high-resolution weather telemetry directly from WebSocket port 5001!
-            if (type === 'daily') {
-                ws.send(JSON.stringify({ type: 'subscribe', unit_id: 'vinoba-velliyanai' }));
-                const weatherDevs = ['Pyranometer', 'pannel temperature', 'Ambient Temperature', 'Wind', 'Humidity'];
-                weatherDevs.forEach(dev => {
-                    ws.send(JSON.stringify({ type: 'get_daily_data', unit_id: 'vinoba-velliyanai', device: dev, date: selectedDate }));
-                });
-            }
+            ws.send(JSON.stringify({ type: 'generate_report', unit_id: plant, pageName, date: selectedDate }));
             return true;
         }
 
-        async function mergeWeatherFromAPI(type, selectedDate, plant, normalizedRows, invNames) {
-            try {
-                const res = await fetch(`api_reports.php?type=${type}&date=${selectedDate}&plant=${plant}&token=${token}`, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
-                const json = await res.json();
-                if (json && json.success && Array.isArray(json.data)) {
-                    const wMap = {};
-                    json.data.forEach(r => {
-                        if (r.time_label) wMap[r.time_label] = r;
-                    });
-                    let updated = false;
-                    normalizedRows.forEach((nr, idx) => {
-                        const w = wMap[nr.time_label];
-                        if (w) {
-                            if (w.radiation > 0 && nr.radiation === 0) { nr.radiation = w.radiation; updated = true; }
-                            if (w.panel_temp > 0 && nr.panel_temp === 0) { nr.panel_temp = w.panel_temp; updated = true; }
-                            if (w.ambient_temp > 0 && nr.ambient_temp === 0) { nr.ambient_temp = w.ambient_temp; updated = true; }
-                            if (w.wind_speed > 0 && nr.wind_speed === 0) { nr.wind_speed = w.wind_speed; updated = true; }
-                            if (w.humidity > 0 && nr.humidity === 0) { nr.humidity = w.humidity; updated = true; }
-                        }
-                    });
-                    // If today's latest row has no weather yet, fill from liveWeather
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    if (type === 'daily' && selectedDate === todayStr && normalizedRows.length > 0) {
-                        const lastIdx = normalizedRows.length - 1;
-                        if (liveWeather.rad > 0 && normalizedRows[lastIdx].radiation === 0) normalizedRows[lastIdx].radiation = liveWeather.rad;
-                        if (liveWeather.ptemp > 0 && normalizedRows[lastIdx].panel_temp === 0) normalizedRows[lastIdx].panel_temp = liveWeather.ptemp;
-                        if (liveWeather.atemp > 0 && normalizedRows[lastIdx].ambient_temp === 0) normalizedRows[lastIdx].ambient_temp = liveWeather.atemp;
-                        if (liveWeather.wind > 0 && normalizedRows[lastIdx].wind_speed === 0) normalizedRows[lastIdx].wind_speed = liveWeather.wind;
-                        if (liveWeather.hum > 0 && normalizedRows[lastIdx].humidity === 0) normalizedRows[lastIdx].humidity = liveWeather.hum;
-                    }
-                    lastReportData = { type: type, data: normalizedRows, meta: { inv_names: invNames } };
-                    renderReportData(type, normalizedRows, invNames);
-                }
-            } catch(err) {
-                console.warn('Weather merge error:', err);
-            }
-        }
 
         function handleWSReportResponse(d) {
             if (!pendingReportRequest) return;
@@ -593,18 +548,6 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 nr.vcb_kwh  = vcbColIdx  >= 0 ? (parseFloat(cells[vcbColIdx])  || 0) : 0;
                 nr.tx_loss  = lossColIdx >= 0 ? (parseFloat(cells[lossColIdx]) || 0) : 0;
 
-                // Pre-fill solar irradiance if inverters generated energy
-                if (nr.inv_total_kwh > 0) {
-                    const kw = nr.inv_total_kwh * 4;
-                    const estRad = Math.min(1150, Math.round((kw / 2000) * 1000 / 0.82 * 10) / 10);
-                    if (estRad > 0) {
-                        nr.radiation = estRad;
-                        nr.panel_temp = Math.round((25 + (estRad / 1000) * 26) * 10) / 10;
-                        nr.ambient_temp = Math.round((24 + (estRad / 1000) * 11) * 10) / 10;
-                        nr.wind_speed = 3.2;
-                        nr.humidity = Math.max(30, Math.round((75 - (estRad / 1000) * 35) * 10) / 10);
-                    }
-                }
                 return nr;
             });
 
@@ -615,10 +558,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             lastReportData = { type: type, data: normalizedRows, meta: { inv_names: invNames } };
             renderReportData(type, normalizedRows, invNames);
 
-            // Immediately merge WMOS weather metrics
-            const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
-            const plant = plantSelect.value || 'vinoba-velliyanai';
-            mergeWeatherFromAPI(type, selectedDate, plant, normalizedRows, invNames);
+
         }
 
         function renderTableHeaders(type, invNames) {
