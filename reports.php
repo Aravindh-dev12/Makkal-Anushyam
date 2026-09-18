@@ -209,7 +209,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         }
         dateInput.value = localDateKey();
-        monthInput.value = new Date().toISOString().slice(0, 7);
+        monthInput.value = localDateKey().slice(0, 7);
 
         function loadSidebar() {
             fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
@@ -366,14 +366,14 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return updated;
         }
 
-        function handleWSDailyWeather(rows) {
+        function handleWSDailyWeather(rows, fallbackDevice = '', fallbackTask = '') {
             if (!Array.isArray(rows) || !rows.length) return;
             rows.forEach(r => {
                 const s = slot15Min(r.time || r.timestamp);
                 if (!s) return;
                 if (!weatherBuckets[s]) weatherBuckets[s] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
-                const dev = String(r.device || r.deviceName || '').toLowerCase();
-                const task = String(r.task || '').toLowerCase();
+                const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase();
+                const task = String(r.task || fallbackTask || '').toLowerCase();
                 const v = r.values || {};
                 captureLiveWeatherValues(v, dev, task, r.time || r.timestamp || '');
 
@@ -461,7 +461,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                         }
 
                         if (d.type === 'daily_data_result' && Array.isArray(d.data)) {
-                            handleWSDailyWeather(d.data);
+                            handleWSDailyWeather(d.data, d.device || d.deviceName || '', d.task || d.pageName || '');
                             return;
                         }
 
@@ -660,7 +660,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             renderWmasTableHeaders(type);
             const validRows = (rows || []).filter(row => row && (row.time_label || row.bTime || row.report_day));
             if (!validRows.length) {
-                tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">No WMAS/WMOS telemetry recorded for this period.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">Waiting for real WMAS/WMOS telemetry...</td></tr>';
                 return;
             }
             let sumRad=0, radN=0, maxPanel=null, maxAmbient=null;
