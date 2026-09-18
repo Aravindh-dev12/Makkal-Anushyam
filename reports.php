@@ -278,6 +278,26 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
         }
 
+        function getReportSection() {
+            return document.getElementById('reportSection')?.value || 'inverter';
+        }
+
+        function toggleReportSection() {
+            currentReportSection = getReportSection();
+            const isWmas = currentReportSection === 'wmas';
+            document.getElementById('reportMainTitle').innerText = isWmas
+                ? 'WMAS Weather Report (Live Telemetry)'
+                : 'Inverter / Electrical Report';
+            document.getElementById('reportMainTitle').className = isWmas
+                ? 'text-base font-bold text-amber-700 mt-0.5'
+                : 'text-base font-bold text-emerald-700 mt-0.5';
+            lastReportData = null;
+            weatherBuckets = {};
+            liveWeather = { rad: null, ptemp: null, atemp: null, wind: null, hum: null, lastAt: 0 };
+            generateReportData();
+            startAutoRefresh();
+        }
+
         function toggleInputs() {
             const type = document.getElementById('reportType').value;
             if (type === 'daily') {
@@ -305,43 +325,107 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return h + ':' + String(roundedM).padStart(2, '0');
         }
 
+        function normalizeWeatherValue(value) {
+            if (value === null || value === undefined || value === '') return null;
+            const raw = typeof value === 'object'
+                ? (value.value ?? value.val ?? value.reading ?? value.data ?? null)
+                : value;
+            const n = parseFloat(String(raw).replace(/,/g, ''));
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function captureLiveWeatherValues(values, device, task, sourceTime) {
+            if (!values || typeof values !== 'object') return false;
+            const dev = String(device || '').toLowerCase();
+            const taskStr = String(task || '').toLowerCase();
+            const weatherSignal = taskStr.includes('wmos') || taskStr.includes('wmas') || taskStr.includes('weather') ||
+                /pyran|pannel|panel|ambient|wind|humid/.test(dev);
+            if (!weatherSignal) return false;
+
+            let updated = false;
+            Object.entries(values).forEach(([key, raw]) => {
+                const kl = String(key).toLowerCase().replace(/[_-]+/g, ' ');
+                const val = normalizeWeatherValue(raw);
+                if (val === null) return;
+                if (/rad|irradiance|raw data/.test(kl) || /pyran/.test(dev)) { liveWeather.rad = val; updated = true; }
+                else if (/pannel|panel|module/.test(kl) || /pannel|panel/.test(dev)) { liveWeather.ptemp = val; updated = true; }
+                else if (/ambient/.test(kl) || /ambient/.test(dev)) { liveWeather.atemp = val; updated = true; }
+                else if (/wind|speed/.test(kl) || /wind/.test(dev)) { liveWeather.wind = val; updated = true; }
+                else if (/humid/.test(kl) || /humid/.test(dev)) { liveWeather.hum = val; updated = true; }
+            });
+            if (updated) {
+                liveWeather.lastAt = Date.now();
+                if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' &&
+                    dateInput.value === new Date().toISOString().split('T')[0]) {
+                    renderWmasLiveRow();
+                }
+            }
+            return updated;
+        }
+
         function handleWSDailyWeather(rows) {
-            if (!rows || !rows.length) return;
+            if (!Array.isArray(rows) || !rows.length) return;
             rows.forEach(r => {
                 const s = slot15Min(r.time || r.timestamp);
                 if (!s) return;
-                if (!weatherBuckets[s]) {
-                    weatherBuckets[s] = { rad: 0, ptemp: 0, atemp: 0, wind: 0, hum: 0 };
-                }
-                const dev = (r.device || '').toLowerCase();
+                if (!weatherBuckets[s]) weatherBuckets[s] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
+                const dev = String(r.device || r.deviceName || '').toLowerCase();
+                const task = String(r.task || '').toLowerCase();
                 const v = r.values || {};
-                if (dev.includes('pyran') && v['raw data'] !== undefined) weatherBuckets[s].rad = Number(v['raw data']);
-                if (dev.includes('pannel') && v['pannel temperature'] !== undefined && v['pannel temperature'] !== null) weatherBuckets[s].ptemp = Number(v['pannel temperature']);
-                if (dev.includes('ambient') && v['Ambient temperature'] !== undefined) weatherBuckets[s].atemp = Number(v['Ambient temperature']);
-                if (dev.includes('wind') && v['windspeed'] !== undefined) weatherBuckets[s].wind = Number(v['windspeed']);
-                if (dev.includes('humid') && v['humidity'] !== undefined) weatherBuckets[s].hum = Number(v['humidity']);
-            });
+                captureLiveWeatherValues(v, dev, task, r.time || r.timestamp || '');
 
-            if (lastReportData && Array.isArray(lastReportData.data)) {
-                let anyUpdated = false;
-                lastReportData.data.forEach(nr => {
-                    const b = weatherBuckets[nr.time_label];
-                    if (b) {
-                        if (b.rad > 0) { nr.radiation = b.rad; anyUpdated = true; }
-                        const pt = b.ptemp > 0 ? b.ptemp : b.atemp;
-                        if (pt > 0) { nr.panel_temp = pt; anyUpdated = true; }
-                        if (b.atemp > 0) { nr.ambient_temp = b.atemp; anyUpdated = true; }
-                        if (b.wind > 0) { nr.wind_speed = b.wind; anyUpdated = true; }
-                        if (b.hum > 0) { nr.humidity = b.hum; anyUpdated = true; }
+                const read = (patterns) => {
+                    for (const [key, raw] of Object.entries(v)) {
+                        const kl = String(key).toLowerCase().replace(/[_-]+/g, ' ');
+                        if (!patterns.some(rx => rx.test(kl))) continue;
+                        const n = normalizeWeatherValue(raw);
+                        if (n !== null) return n;
                     }
-                });
-                if (anyUpdated) {
-                    const type = document.getElementById('reportType').value;
-                    const invNames = lastReportData.meta ? lastReportData.meta.inv_names : null;
-                    renderReportData(type, lastReportData.data, invNames);
-                }
-            }
+                    return null;
+                };
+                const rad = read([/^raw data$/, /radiation/, /irradiance/]);
+                const pt = read([/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temp( data)?$/, /^temperature$/]);
+                const at = read([/ambient.*temp/]);
+                const wind = read([/wind.*speed/, /^windspeed$/, /^wind$/]);
+                const hum = read([/humidity/, /relative humidity/]);
+                if (rad !== null) weatherBuckets[s].rad = rad;
+                if (pt !== null) weatherBuckets[s].ptemp = pt;
+                if (at !== null) weatherBuckets[s].atemp = at;
+                if (wind !== null) weatherBuckets[s].wind = wind;
+                if (hum !== null) weatherBuckets[s].hum = hum;
+            });
+            if (currentReportSection === 'wmas') renderWmasReportFromBuckets();
         }
+
+        function renderWmasLiveRow() {
+            const time = new Date().toTimeString().slice(0,5);
+            weatherBuckets[slot15Min(time)] = {
+                rad: liveWeather.rad,
+                ptemp: liveWeather.ptemp,
+                atemp: liveWeather.atemp,
+                wind: liveWeather.wind,
+                hum: liveWeather.hum
+            };
+            renderWmasReportFromBuckets();
+        }
+
+        function renderWmasReportFromBuckets() {
+            const rows = Object.keys(weatherBuckets).sort().map(time => ({
+                time_label: time,
+                radiation: weatherBuckets[time].rad,
+                panel_temp: weatherBuckets[time].ptemp,
+                ambient_temp: weatherBuckets[time].atemp,
+                wind_speed: weatherBuckets[time].wind,
+                humidity: weatherBuckets[time].hum
+            }));
+            lastReportData = {
+                type: 'daily',
+                data: rows,
+                meta: { report_section: 'wmas', source: 'Real WebSocket WMAS/WMOS telemetry' }
+            };
+            renderWmasReportData('daily', rows);
+        }
+
 
         function connectReportWS() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
