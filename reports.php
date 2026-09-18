@@ -534,12 +534,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const normalizedRows = rows.map(row => {
                 const cells = row.cells || [];
                 const nr = {
-                    time_label: type === 'daily' ? formatRailwayTime(row.time || '') : (row.time || ''),
-                    radiation: 0,
-                    panel_temp: 0,
-                    ambient_temp: 0,
-                    wind_speed: 0,
-                    humidity: 0
+                    time_label: type === 'daily' ? formatRailwayTime(row.time || '') : (row.time || '')
                 };
                 invColIndices.forEach((origIdx, i) => {
                     nr['inv' + (i+1) + '_kwh'] = parseFloat(cells[origIdx]) || 0;
@@ -564,139 +559,130 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         function renderTableHeaders(type, invNames) {
             const thead = document.querySelector('.report-table thead');
             const n = invNames.length;
-            const timeW = 85;
-            const wmsW  = 90;
-            const invW  = 95;
-            const totW  = 105;
-            const vcbW  = 110;
-            const lossW = 95;
-            const totalW = timeW + (wmsW * 5) + (n * invW) + totW + vcbW + lossW;
-
+            const timeW = 85, invW = 105, totW = 110, vcbW = 120, lossW = 105;
+            const totalW = timeW + (n * invW) + totW + vcbW + lossW;
             let topRow = `<th rowspan="2" style="width:${timeW}px;min-width:${timeW}px;" class="bg-slate-100 text-slate-700">${type==='daily'?'Time (24h)':'Date'}</th>`;
-            topRow += `<th colspan="5" class="bg-amber-100/70 text-amber-900 border-b">Weather Station (WMOS)</th>`;
-            topRow += `<th colspan="${n}" class="bg-blue-100/70 text-blue-900 border-b">Inverters Generation</th>`;
+            topRow += `<th colspan="${Math.max(n,1)}" class="bg-blue-100/70 text-blue-900 border-b">Inverters Generation</th>`;
             topRow += `<th rowspan="2" style="width:${totW}px;min-width:${totW}px;" class="bg-indigo-100/80 text-indigo-950">INV Total<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
             topRow += `<th rowspan="2" style="width:${vcbW}px;min-width:${vcbW}px;" class="bg-purple-100/80 text-purple-950">HT Panel (VCB)<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
             topRow += `<th rowspan="2" style="width:${lossW}px;min-width:${lossW}px;" class="bg-rose-100/80 text-rose-950">TX Loss<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
-
             let subRow = '';
-            // WMS Subheaders
-            subRow += `<th style="width:${wmsW}px;min-width:${wmsW}px;" class="bg-amber-50 text-amber-800">Rad<br><span class="text-[9px] font-normal">(W/m²)</span></th>`;
-            subRow += `<th style="width:${wmsW}px;min-width:${wmsW}px;" class="bg-rose-50 text-rose-800">Panel<br><span class="text-[9px] font-normal">(°C)</span></th>`;
-            subRow += `<th style="width:${wmsW}px;min-width:${wmsW}px;" class="bg-orange-50 text-orange-800">Amb<br><span class="text-[9px] font-normal">(°C)</span></th>`;
-            subRow += `<th style="width:${wmsW}px;min-width:${wmsW}px;" class="bg-sky-50 text-sky-800">Wind<br><span class="text-[9px] font-normal">(m/s)</span></th>`;
-            subRow += `<th style="width:${wmsW}px;min-width:${wmsW}px;" class="bg-blue-50 text-blue-800">Hum<br><span class="text-[9px] font-normal">(%)</span></th>`;
-            // Inverter Subheaders
-            invNames.forEach(name => {
+            if (n) invNames.forEach(name => {
                 subRow += `<th style="width:${invW}px;min-width:${invW}px;" class="bg-blue-50/70 text-blue-800">${name.replace('Inverter ','INV-')}<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
             });
-
             thead.innerHTML = `<tr>${topRow}</tr><tr>${subRow}</tr>`;
             document.querySelector('.report-table').style.minWidth = totalW + 'px';
+        }
+
+        function renderWmasTableHeaders(type) {
+            const thead = document.querySelector('.report-table thead');
+            const label = type === 'daily' ? 'Time (24h)' : 'Date';
+            thead.innerHTML = `<tr>
+                <th class="bg-slate-100 text-slate-700" style="width:110px;min-width:110px;">${label}</th>
+                <th class="bg-amber-50 text-amber-800" style="min-width:130px;">Radiation<br><span class="text-[9px] font-normal">(W/m²)</span></th>
+                <th class="bg-rose-50 text-rose-800" style="min-width:130px;">Panel Temp<br><span class="text-[9px] font-normal">(°C)</span></th>
+                <th class="bg-orange-50 text-orange-800" style="min-width:130px;">Ambient Temp<br><span class="text-[9px] font-normal">(°C)</span></th>
+                <th class="bg-sky-50 text-sky-800" style="min-width:130px;">Wind Speed<br><span class="text-[9px] font-normal">(m/s)</span></th>
+                <th class="bg-blue-50 text-blue-800" style="min-width:130px;">Humidity<br><span class="text-[9px] font-normal">(%)</span></th>
+            </tr>`;
+            document.querySelector('.report-table').style.minWidth = '760px';
         }
 
         async function fetchReportFromAPI() {
             const type = document.getElementById('reportType').value;
             const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
-            const plant = plantSelect.value;
+            const plant = plantSelect.value || 'vinoba-velliyanai';
             const res = await fetch(`api_reports.php?type=${type}&date=${selectedDate}&plant=${plant}&token=${token}`, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
             const text = await res.text();
             let result;
             try { result = JSON.parse(text); } catch (e) { throw new Error('Server returned invalid JSON'); }
             if (!result.success) throw new Error(result.error || result.message || 'Unknown server error');
-            lastReportData = result;
-            renderReportData(type, result.data, result.meta ? result.meta.inv_names : null);
+
+            if (currentReportSection === 'wmas') {
+                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmas', source: 'Stored real WMAS/WMOS telemetry' } };
+                renderWmasReportData(type, result.data || []);
+            } else {
+                lastReportData = result;
+                renderReportData(type, result.data, result.meta ? result.meta.inv_names : null);
+            }
         }
 
         function renderReportData(type, rows, invNames) {
             const tbody = document.getElementById('reportTableBody');
             if (!rows || !rows.length) {
-                tbody.innerHTML = '<tr><td colspan="30" class="py-10 text-center text-gray-500">No telemetry data recorded for this date.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="30" class="py-10 text-center text-gray-500">No inverter/electrical telemetry data recorded for this period.</td></tr>';
                 return;
             }
-
             if (!invNames || !invNames.length) {
                 invNames = [];
                 for (let i = 1; i <= 12; i++) {
-                    if (rows.some(r => (r['inv'+i+'_kwh']||0) > 0)) invNames.push('INV-'+i);
+                    if (rows.some(r => Number(r['inv'+i+'_kwh']) > 0)) invNames.push('INV-' + i);
                 }
-                if (!invNames.length) invNames = ['INV-1','INV-2','INV-3','INV-4','INV-5','INV-6','INV-7'];
             }
             renderTableHeaders(type, invNames);
 
-            // Accumulators
-            let sumRad = 0, radCount = 0;
-            let maxPTemp = 0, maxATemp = 0;
-            const totInvKwh = new Array(invNames.length).fill(0);
-            let totInvTotal = 0, totVcb = 0, totLoss = 0;
-
+            const totals = new Array(invNames.length).fill(0);
+            let totalInv = 0, totalVcb = 0, totalLoss = 0;
             let html = '';
             rows.forEach((row, ri) => {
-                const bgClass = ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50';
-                const rad = parseFloat(row.radiation) || 0;
-                const ptemp = parseFloat(row.panel_temp) || 0;
-                const atemp = parseFloat(row.ambient_temp) || 0;
-                const wind = parseFloat(row.wind_speed) || 0;
-                const hum = parseFloat(row.humidity) || 0;
-
-                if (rad > 0) { sumRad += rad; radCount++; }
-                if (ptemp > maxPTemp) maxPTemp = ptemp;
-                if (atemp > maxATemp) maxATemp = atemp;
-
-                html += `<tr class="${bgClass} hover:bg-emerald-50/30 transition-colors">`;
+                const bg = ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50';
+                html += `<tr class="${bg} hover:bg-emerald-50/30 transition-colors">`;
                 html += `<td class="font-bold text-gray-800 bg-slate-50/80">${type === 'daily' ? (formatRailwayTime(row.time_label) || '-') : (row.time_label || '-')}</td>`;
-                
-                // WMS values
-                html += `<td class="text-amber-700 font-mono font-semibold">${rad > 0 ? rad.toFixed(1) : '-'}</td>`;
-                html += `<td class="text-rose-700 font-mono font-semibold">${ptemp > 0 ? ptemp.toFixed(1) : '-'}</td>`;
-                html += `<td class="text-orange-700 font-mono font-semibold">${atemp > 0 ? atemp.toFixed(1) : '-'}</td>`;
-                html += `<td class="text-sky-700 font-mono font-semibold">${wind > 0 ? wind.toFixed(1) : '-'}</td>`;
-                html += `<td class="text-blue-700 font-mono font-semibold">${hum > 0 ? hum.toFixed(1) : '-'}</td>`;
-
-                // Inverters
-                let rowInvTotal = 0;
+                let rowInv = 0;
                 invNames.forEach((_, i) => {
-                    const n = i + 1;
-                    const kwh = row['inv'+n+'_kwh'] || 0;
-                    rowInvTotal += kwh;
-                    totInvKwh[i] += kwh;
+                    const kwh = Number(row['inv' + (i+1) + '_kwh']) || 0;
+                    rowInv += kwh; totals[i] += kwh;
                     html += `<td class="text-blue-700 font-medium font-mono">${kwh > 0 ? fmt(kwh) : '-'}</td>`;
                 });
-
-                const invTotal = ((row.inv_total_kwh > 0) ? row.inv_total_kwh : rowInvTotal);
-                const vcbKwh  = (row.vcb_kwh || 0);
-                const txLoss  = ((row.tx_loss !== undefined) ? row.tx_loss : Math.max(0, invTotal - vcbKwh));
-
-                totInvTotal += invTotal;
-                totVcb      += vcbKwh;
-                totLoss     += txLoss;
-
+                const invTotal = Number(row.inv_total_kwh) > 0 ? Number(row.inv_total_kwh) : rowInv;
+                const vcb = Number(row.vcb_kwh) || 0;
+                const loss = row.tx_loss !== undefined ? (Number(row.tx_loss) || 0) : Math.max(0, invTotal - vcb);
+                totalInv += invTotal; totalVcb += vcb; totalLoss += loss;
                 html += `<td class="font-bold text-indigo-700 font-mono">${invTotal > 0 ? fmt(invTotal) : '-'}</td>`;
-                html += `<td class="font-bold text-purple-700 font-mono">${vcbKwh > 0 ? fmt(vcbKwh) : '-'}</td>`;
-                html += `<td class="font-semibold text-rose-600 font-mono">${txLoss > 0 ? fmt(txLoss) : '-'}</td>`;
-                html += '</tr>';
+                html += `<td class="font-bold text-purple-700 font-mono">${vcb > 0 ? fmt(vcb) : '-'}</td>`;
+                html += `<td class="font-semibold text-rose-600 font-mono">${loss > 0 ? fmt(loss) : '-'}</td></tr>`;
             });
-
-            // Summary Row
-            const avgRad = radCount > 0 ? (sumRad / radCount).toFixed(1) : '-';
-            html += `<tr class="bg-slate-100 font-black border-t-2 border-slate-300">`;
-            html += `<td class="text-slate-900 uppercase">SUMMARY</td>`;
-            html += `<td class="text-amber-800 font-mono">${avgRad}</td>`;
-            html += `<td class="text-rose-800 font-mono">${maxPTemp > 0 ? maxPTemp.toFixed(1) : '-'}</td>`;
-            html += `<td class="text-orange-800 font-mono">${maxATemp > 0 ? maxATemp.toFixed(1) : '-'}</td>`;
-            html += `<td class="text-sky-800 font-mono">-</td>`;
-            html += `<td class="text-blue-800 font-mono">-</td>`;
-            totInvKwh.forEach(val => {
-                html += `<td class="text-blue-800 font-mono">${fmt(val)}</td>`;
-            });
-            html += `<td class="text-indigo-900 font-mono">${fmt(totInvTotal)}</td>`;
-            html += `<td class="text-purple-900 font-mono">${fmt(totVcb)}</td>`;
-            html += `<td class="text-rose-900 font-mono">${fmt(totLoss)}</td>`;
-            html += `</tr>`;
-
+            html += '<tr class="bg-slate-100 font-black border-t-2 border-slate-300"><td class="text-slate-900 uppercase">SUMMARY</td>';
+            totals.forEach(v => html += `<td class="text-blue-800 font-mono">${fmt(v)}</td>`);
+            html += `<td class="text-indigo-900 font-mono">${fmt(totalInv)}</td><td class="text-purple-900 font-mono">${fmt(totalVcb)}</td><td class="text-rose-900 font-mono">${fmt(totalLoss)}</td></tr>`;
             tbody.innerHTML = html;
             updateLiveStatus();
             document.getElementById('dlBtn').disabled = false;
+            document.getElementById('dlBtn').classList.remove('opacity-50','cursor-not-allowed');
+        }
+
+        function renderWmasReportData(type, rows) {
+            const tbody = document.getElementById('reportTableBody');
+            renderWmasTableHeaders(type);
+            const validRows = (rows || []).filter(row => row && (row.time_label || row.bTime || row.report_day));
+            if (!validRows.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">No WMAS/WMOS telemetry recorded for this period.</td></tr>';
+                return;
+            }
+            let sumRad=0, radN=0, maxPanel=null, maxAmbient=null;
+            let html='';
+            validRows.forEach((row,ri)=>{
+                const t=row.time_label || row.bTime || row.report_day || '-';
+                const num=v=>{const n=parseFloat(v); return Number.isFinite(n)?n:null;};
+                const rad=num(row.radiation), panel=num(row.panel_temp), ambient=num(row.ambient_temp), wind=num(row.wind_speed), hum=num(row.humidity);
+                if(rad!==null){sumRad+=rad;radN++;}
+                if(panel!==null) maxPanel=maxPanel===null?panel:Math.max(maxPanel,panel);
+                if(ambient!==null) maxAmbient=maxAmbient===null?ambient:Math.max(maxAmbient,ambient);
+                html += `<tr class="${ri%2===0?'bg-white':'bg-slate-50/50'} hover:bg-amber-50/30">`;
+                html += `<td class="font-bold text-gray-800 bg-slate-50/80">${type==='daily'?formatRailwayTime(t):t}</td>`;
+                html += `<td class="text-amber-700 font-mono font-semibold">${rad!==null?rad.toFixed(1):'-'}</td>`;
+                html += `<td class="text-rose-700 font-mono font-semibold">${panel!==null?panel.toFixed(1):'-'}</td>`;
+                html += `<td class="text-orange-700 font-mono font-semibold">${ambient!==null?ambient.toFixed(1):'-'}</td>`;
+                html += `<td class="text-sky-700 font-mono font-semibold">${wind!==null?wind.toFixed(1):'-'}</td>`;
+                html += `<td class="text-blue-700 font-mono font-semibold">${hum!==null?hum.toFixed(1):'-'}</td></tr>`;
+            });
+            html += '<tr class="bg-slate-100 font-black border-t-2 border-slate-300"><td class="text-slate-900 uppercase">SUMMARY</td>';
+            html += `<td class="text-amber-800 font-mono">${radN?(sumRad/radN).toFixed(1):'-'}</td>`;
+            html += `<td class="text-rose-800 font-mono">${maxPanel!==null?maxPanel.toFixed(1):'-'}</td>`;
+            html += `<td class="text-orange-800 font-mono">${maxAmbient!==null?maxAmbient.toFixed(1):'-'}</td><td class="text-sky-800 font-mono">-</td><td class="text-blue-800 font-mono">-</td></tr>`;
+            tbody.innerHTML=html;
+            updateLiveStatus();
+            document.getElementById('dlBtn').disabled=false;
             document.getElementById('dlBtn').classList.remove('opacity-50','cursor-not-allowed');
         }
 
