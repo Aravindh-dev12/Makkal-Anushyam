@@ -561,21 +561,30 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
 
         function renderTableHeaders(type, invNames) {
             const thead = document.querySelector('.report-table thead');
-            const n = invNames.length;
-            const timeW = 85, invW = 105, totW = 110, vcbW = 120, lossW = 105;
-            const totalW = timeW + (n * invW) + totW + vcbW + lossW;
-            let topRow = `<th rowspan="2" style="width:${timeW}px;min-width:${timeW}px;" class="bg-slate-100 text-slate-700">${type==='daily'?'Time (24h)':'Date'}</th>`;
-            topRow += `<th colspan="${Math.max(n,1)}" class="bg-blue-100/70 text-blue-900 border-b">Inverters Generation</th>`;
-            topRow += `<th rowspan="2" style="width:${totW}px;min-width:${totW}px;" class="bg-indigo-100/80 text-indigo-950">INV Total<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
-            topRow += `<th rowspan="2" style="width:${vcbW}px;min-width:${vcbW}px;" class="bg-purple-100/80 text-purple-950">HT Panel (VCB)<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
-            topRow += `<th rowspan="2" style="width:${lossW}px;min-width:${lossW}px;" class="bg-rose-100/80 text-rose-950">TX Loss<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
-            let subRow = '';
-            if (n) invNames.forEach(name => {
-                subRow += `<th style="width:${invW}px;min-width:${invW}px;" class="bg-blue-50/70 text-blue-800">${name.replace('Inverter ','INV-')}<br><span class="text-[9px] font-normal">(kWh)</span></th>`;
-            });
-            thead.innerHTML = `<tr>${topRow}</tr><tr>${subRow}</tr>`;
-            document.querySelector('.report-table').style.minWidth = totalW + 'px';
+            const names = Array.isArray(invNames) && invNames.length ? invNames : ['INV-1'];
+            const n = names.length;
+            const cols = [
+                `<col style="width:92px">`,
+                ...names.map(() => `<col style="width:108px">`),
+                `<col style="width:112px">`,
+                `<col style="width:122px">`,
+                `<col style="width:108px">`
+            ];
+            const table = document.querySelector('.report-table');
+            table.style.minWidth = (92 + n*108 + 112 + 122 + 108) + 'px';
+            table.innerHTML = `<colgroup>${cols.join('')}</colgroup><thead></thead><tbody id="reportTableBody"></tbody>`;
+            const headerNode = table.querySelector('thead');
+            const top = `<tr>
+                <th rowspan="2" class="bg-slate-100 text-slate-700">Time<br><span class="text-[9px] font-normal">(24h)</span></th>
+                <th colspan="${n}" class="bg-blue-100/70 text-blue-900 border-b">Inverters Generation</th>
+                <th rowspan="2" class="bg-indigo-100/80 text-indigo-950">INV Total<br><span class="text-[9px] font-normal">(kWh)</span></th>
+                <th rowspan="2" class="bg-purple-100/80 text-purple-950">HT Panel (VCB)<br><span class="text-[9px] font-normal">(kWh)</span></th>
+                <th rowspan="2" class="bg-rose-100/80 text-rose-950">TX Loss<br><span class="text-[9px] font-normal">(kWh)</span></th>
+            </tr>`;
+            const sub = `<tr>${names.map(name => `<th class="bg-blue-50/70 text-blue-800">${String(name).replace('Inverter ','INV-')}<br><span class="text-[9px] font-normal">(kWh)</span></th>`).join('')}</tr>`;
+            headerNode.innerHTML = top + sub;
         }
+
 
         function renderWmasTableHeaders(type) {
             const thead = document.querySelector('.report-table thead');
@@ -622,6 +631,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 for (let i = 1; i <= 12; i++) {
                     if (rows.some(r => Number(r['inv'+i+'_kwh']) > 0)) invNames.push('INV-' + i);
                 }
+                if (!invNames.length) invNames = ['INV-1'];
             }
             renderTableHeaders(type, invNames);
 
