@@ -560,29 +560,39 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         function renderTableHeaders(type, invNames) {
-            const thead = document.querySelector('.report-table thead');
+            const table = document.querySelector('.report-table');
+            const thead = table.querySelector('thead');
             const names = Array.isArray(invNames) && invNames.length ? invNames : ['INV-1'];
             const n = names.length;
-            const cols = [
-                `<col style="width:92px">`,
-                ...names.map(() => `<col style="width:108px">`),
-                `<col style="width:112px">`,
-                `<col style="width:122px">`,
-                `<col style="width:108px">`
-            ];
-            const table = document.querySelector('.report-table');
-            table.style.minWidth = (92 + n*108 + 112 + 122 + 108) + 'px';
-            table.innerHTML = `<colgroup>${cols.join('')}</colgroup><thead></thead><tbody id="reportTableBody"></tbody>`;
-            const headerNode = table.querySelector('thead');
-            const top = `<tr>
-                <th rowspan="2" class="bg-slate-100 text-slate-700">Time<br><span class="text-[9px] font-normal">(24h)</span></th>
+            const timeW = 92, invW = 108, totalW = 112, vcbW = 122, lossW = 108;
+            const tableW = timeW + (n * invW) + totalW + vcbW + lossW;
+
+            table.style.tableLayout = 'fixed';
+            table.style.width = Math.max(1400, tableW) + 'px';
+            table.style.minWidth = Math.max(1400, tableW) + 'px';
+
+            table.querySelector('colgroup')?.remove();
+            const colGroup = document.createElement('colgroup');
+            [timeW, ...Array(n).fill(invW), totalW, vcbW, lossW].forEach(width => {
+                const col = document.createElement('col');
+                col.style.width = width + 'px';
+                col.style.minWidth = width + 'px';
+                colGroup.appendChild(col);
+            });
+            table.insertBefore(colGroup, thead);
+
+            const label = type === 'daily' ? 'Time (24h)' : 'Date';
+            const topRow = `<tr>
+                <th rowspan="2" class="bg-slate-100 text-slate-700">${label}</th>
                 <th colspan="${n}" class="bg-blue-100/70 text-blue-900 border-b">Inverters Generation</th>
                 <th rowspan="2" class="bg-indigo-100/80 text-indigo-950">INV Total<br><span class="text-[9px] font-normal">(kWh)</span></th>
                 <th rowspan="2" class="bg-purple-100/80 text-purple-950">HT Panel (VCB)<br><span class="text-[9px] font-normal">(kWh)</span></th>
                 <th rowspan="2" class="bg-rose-100/80 text-rose-950">TX Loss<br><span class="text-[9px] font-normal">(kWh)</span></th>
             </tr>`;
-            const sub = `<tr>${names.map(name => `<th class="bg-blue-50/70 text-blue-800">${String(name).replace('Inverter ','INV-')}<br><span class="text-[9px] font-normal">(kWh)</span></th>`).join('')}</tr>`;
-            headerNode.innerHTML = top + sub;
+            const subRow = `<tr>${names.map(name =>
+                `<th class="bg-blue-50/70 text-blue-800">${String(name).replace('Inverter ','INV-')}<br><span class="text-[9px] font-normal">(kWh)</span></th>`
+            ).join('')}</tr>`;
+            thead.innerHTML = topRow + subRow;
         }
 
 
@@ -621,8 +631,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         function renderReportData(type, rows, invNames) {
-            const tbody = document.getElementById('reportTableBody');
             if (!rows || !rows.length) {
+                const tbody = document.getElementById('reportTableBody');
                 tbody.innerHTML = '<tr><td colspan="30" class="py-10 text-center text-gray-500">No inverter/electrical telemetry data recorded for this period.</td></tr>';
                 return;
             }
@@ -634,6 +644,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 if (!invNames.length) invNames = ['INV-1'];
             }
             renderTableHeaders(type, invNames);
+            const tbody = document.getElementById('reportTableBody');
 
             const totals = new Array(invNames.length).fill(0);
             let totalInv = 0, totalVcb = 0, totalLoss = 0;
@@ -666,8 +677,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         function renderWmasReportData(type, rows) {
-            const tbody = document.getElementById('reportTableBody');
             renderWmasTableHeaders(type);
+            const tbody = document.getElementById('reportTableBody');
             const validRows = (rows || []).filter(row => row && (row.time_label || row.bTime || row.report_day));
             if (!validRows.length) {
                 tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">Waiting for real WMAS/WMOS telemetry...</td></tr>';
@@ -714,6 +725,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Fetching real telemetry...</p></div></td></tr>';
 
             if (currentReportSection === 'wmas') {
+                pendingReportRequest = false;
+                if (wsReportTimeout) { clearTimeout(wsReportTimeout); wsReportTimeout = null; }
                 lastReportData = null;
                 weatherBuckets = {};
                 if (type === 'daily' && selectedDate === localDateKey()) {
