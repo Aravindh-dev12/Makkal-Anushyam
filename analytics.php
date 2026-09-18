@@ -561,8 +561,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
         function requestSelectedWmosToday() {
             const source = WMOS_EXPORT_SOURCES[inverterSelect?.value || ''];
-            if (!source || !analyticsWmosSocket || analyticsWmosSocket.readyState !== WebSocket.OPEN) return;
-            if (analyticsSocket?.readyState === WebSocket.OPEN) analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
+            if (!source || !analyticsSocket || analyticsSocket.readyState !== WebSocket.OPEN) return;
+            analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
         function updateAnalyticsCards() {
