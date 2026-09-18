@@ -130,7 +130,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                                 <span>Export Excel</span>
                             </button>
                             <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
-                                <span class="block mb-1 text-right">Inverter / WMOS</span>
+                                <span class="block mb-1 text-right">Inverter / WMAS</span>
                                 <select id="analyticsInverterSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                     <option value="">Select Inverter</option>
                                 </select>
@@ -161,7 +161,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-4">
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMOS)
+                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMAS / WMOS)
                         </h3>
                         <div class="flex items-center gap-2">
                             <span id="wmosLiveDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
@@ -211,7 +211,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                         </div>
                     </div>
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
-                        <span>Source: live WebSocket telemetry · no mock/default weather values</span>
+                        <span>Source: live WebSocket telemetry · no cached/mock/default weather values</span>
                         <span>Last sample: <span class="font-bold text-slate-500" id="wmosLastSample">--</span></span>
                     </div>
                 </section>
@@ -612,8 +612,26 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
 
         function updateAnalyticsCards() {
-            const inverterRows=Object.values(aState.inverters),totalInv=Math.max(parseInt(cfg.inverter_count||0,10),inverterRows.length),activeInv=inverterRows.filter(row=>row.online&&row.outputKw>GENERATION_THRESHOLD_KW).length,livePower=inverterRows.reduce((sum,row)=>sum+(Number(row.outputKw)||0),0),liveEnergy=inverterRows.reduce((sum,row)=>sum+(Number(row.dailyGen)||0),0),perf=Number(cfg.capacity)>0?((livePower/(Number(cfg.capacity)*1000))*100):0,avail=totalInv>0?((activeInv/totalInv)*100):0;
-            document.getElementById('perf_val').innerHTML=perf.toFixed(1)+' <span class="text-sm font-bold text-blue-600">%</span>'; document.getElementById('yield_val').innerHTML=liveEnergy.toFixed(2)+' <span class="text-sm font-bold text-purple-600">kWh</span>'; document.getElementById('avail_val').innerHTML=avail.toFixed(1)+' <span class="text-sm font-bold text-emerald-600">%</span>';
+            const inverterRows = Object.values(aState.inverters);
+            const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0);
+            const perfEl = document.getElementById('perf_val');
+            const yieldEl = document.getElementById('yield_val');
+            const availEl = document.getElementById('avail_val');
+            if (!liveRows.length) {
+                perfEl.innerHTML = '-- <span class="text-sm font-bold text-blue-600">%</span>';
+                yieldEl.innerHTML = '-- <span class="text-sm font-bold text-purple-600">kWh</span>';
+                availEl.innerHTML = '-- <span class="text-sm font-bold text-emerald-600">%</span>';
+                return;
+            }
+            const totalInv = Math.max(parseInt(cfg.inverter_count || 0, 10), liveRows.length);
+            const activeInv = liveRows.filter(row => row.online && Number(row.outputKw) > GENERATION_THRESHOLD_KW).length;
+            const livePower = liveRows.reduce((sum, row) => sum + (Number(row.outputKw) || 0), 0);
+            const liveEnergy = liveRows.reduce((sum, row) => sum + (Number(row.dailyGen) || 0), 0);
+            const perf = Number(cfg.capacity) > 0 ? ((livePower / (Number(cfg.capacity) * 1000)) * 100) : 0;
+            const avail = totalInv > 0 ? ((activeInv / totalInv) * 100) : 0;
+            perfEl.innerHTML = perf.toFixed(1) + ' <span class="text-sm font-bold text-blue-600">%</span>';
+            yieldEl.innerHTML = liveEnergy.toFixed(2) + ' <span class="text-sm font-bold text-purple-600">kWh</span>';
+            availEl.innerHTML = avail.toFixed(1) + ' <span class="text-sm font-bold text-emerald-600">%</span>';
         }
 
         function rawSelectedOutputRows() {
@@ -766,7 +784,6 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         initOutputTrendChart();
         seedConfiguredInverters();
         renderOutputTrend();
-        loadLatestSnapshot();
         connectWSAnalytics();
         connectWSAnalyticsWmos();
 
