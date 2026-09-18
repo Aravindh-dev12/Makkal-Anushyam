@@ -30,7 +30,7 @@
                     <span class="text-xs font-bold text-slate-600 tracking-widest hidden sm:inline" id="clockDisplay">--:--:--</span>
                 </div>
             </header>
-            <div class="p-4 sm:p-6 w-full flex flex-col gap-6 max-w-[1600px] mx-auto">
+            <div class="p-4 sm:p-6 lg:p-8 w-full flex flex-col gap-6 lg:gap-8 max-w-[1920px] mx-auto">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden group hover:shadow-md transition duration-300">
                         <div class="absolute -right-4 -top-4 w-24 h-24 bg-blue-50 rounded-full blur-xl -z-10 group-hover:bg-blue-100 transition"></div>
@@ -149,11 +149,11 @@
                     <div class="grid gap-4 md:grid-cols-2">
                         <div class="bg-slate-50 rounded-lg p-4 border border-slate-100 text-center">
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Total Export</p>
-                            <p class="mt-2 text-xl font-black text-slate-800" id="act_exp">-- <span class="text-xs text-slate-500">MWh</span></p>
+                            <p class="mt-2 text-xl font-black text-slate-800" id="act_exp">-- <span class="text-xs text-slate-500">kWh</span></p>
                         </div>
                         <div class="bg-slate-50 rounded-lg p-4 border border-slate-100 text-center">
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Total Import</p>
-                            <p class="mt-2 text-xl font-black text-slate-800" id="act_imp">-- <span class="text-xs text-slate-500">MWh</span></p>
+                            <p class="mt-2 text-xl font-black text-slate-800" id="act_imp">-- <span class="text-xs text-slate-500">kWh</span></p>
                         </div>
                     </div>
                 </div>
@@ -243,8 +243,8 @@
                     setText('vthd_b', (parseFloat(v["Voltage THD B"]) || 0).toFixed(2), '%');
                     const expKwh = parseFloat(v["Active Total Export"]) || 0;
                     const impKwh = parseFloat(v["Active Total Import"]) || 0;
-                    setText('act_exp', (expKwh / 1000).toFixed(3), 'MWh');
-                    setText('act_imp', (impKwh / 1000).toFixed(3), 'MWh');
+                    setText('act_exp', expKwh.toFixed(2), 'kWh');
+                    setText('act_imp', impKwh.toFixed(2), 'kWh');
                 } catch(err) { console.error(err); }
             };
             ws.onclose = function() { document.getElementById('refreshPulse').className = 'w-2.5 h-2.5 bg-red-500 rounded-full'; setTimeout(connectWS, 5000); };
