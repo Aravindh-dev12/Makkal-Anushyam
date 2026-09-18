@@ -101,15 +101,28 @@
                         <div class="text-sm text-slate-400 italic text-center py-8 col-span-full">Waiting for telemetry data...</div>
                     </div>
                 </div>
-                <!-- Weather Station (WMOS) - 4 Separate Individual Boxes in Same Row Under Inverters -->
+                <!-- Weather Station (WMAS / WMOS) - live real telemetry values -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMOS)
+                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMAS / WMOS)
                         </h3>
                         <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Live Telemetry</span>
                     </div>
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-orange-800 uppercase tracking-wider">Radiation</span>
+                                <div class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                                    <i class="fa-solid fa-sun text-sm"></i>
+                                </div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="font-black text-orange-600 text-2xl sm:text-3xl font-mono" id="wmos_rad">--</span>
+                                <span class="text-sm font-bold text-orange-500">W/m²</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Solar Radiation</p>
+                        </div>
                         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-[11px] font-black text-rose-800 uppercase tracking-wider">Panel Temp</span>
@@ -588,25 +601,27 @@
                             }
                         }
                         if (radVal !== undefined && radVal !== null) {
-                            const rNum = parseFloat(radVal);
+                            const rawRadiation = (radVal && typeof radVal === 'object') ? (radVal.value ?? radVal.val ?? radVal.reading ?? radVal.data ?? null) : radVal;
+                            const rNum = parseFloat(rawRadiation);
                             const el = document.getElementById('wmos_rad');
-                            if (el) el.textContent = !isNaN(rNum) ? Math.round(rNum) : radVal;
+                            if (el) el.textContent = !isNaN(rNum) ? Math.round(rNum) : rawRadiation;
                         }
 
                         // Panel Temperature
                         let ptempVal = d.values["pannel temperature"] !== undefined ? d.values["pannel temperature"] :
                                        (d.values["panel temperature"] !== undefined ? d.values["panel temperature"] :
                                        (d.values["module temperature"] !== undefined ? d.values["module temperature"] : undefined));
-                        if (ptempVal === undefined && (deviceStr.includes('pannel') || deviceStr.includes('panel'))) {
+                        if (ptempVal === undefined && (deviceStr.includes('pannel') || deviceStr.includes('panel') || deviceStr.includes('module'))) {
                             for (const k in d.values) {
                                 if (/temp/i.test(k)) { ptempVal = d.values[k]; break; }
                             }
                         }
                         if (ptempVal !== undefined && ptempVal !== null) {
-                            const pNum = parseFloat(ptempVal);
+                            const rawPanelTemp = (ptempVal && typeof ptempVal === 'object') ? (ptempVal.value ?? ptempVal.val ?? ptempVal.reading ?? ptempVal.data ?? null) : ptempVal;
+                            const pNum = parseFloat(rawPanelTemp);
                             const el = document.getElementById('wmos_ptemp');
                             if (el) {
-                                el.textContent = !isNaN(pNum) ? pNum.toFixed(1) : ptempVal;
+                                el.textContent = !isNaN(pNum) ? pNum.toFixed(1) : rawPanelTemp;
                                 el.dataset.isLivePanel = "true";
                             }
                         }
@@ -620,12 +635,13 @@
                             }
                         }
                         if (atempVal !== undefined && atempVal !== null) {
-                            const aNum = parseFloat(atempVal);
+                            const rawAmbientTemp = (atempVal && typeof atempVal === 'object') ? (atempVal.value ?? atempVal.val ?? atempVal.reading ?? atempVal.data ?? null) : atempVal;
+                            const aNum = parseFloat(rawAmbientTemp);
                             const atempEl = document.getElementById('wmos_atemp');
-                            if (atempEl) atempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : atempVal;
+                            if (atempEl) atempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : rawAmbientTemp;
                             const ptempEl = document.getElementById('wmos_ptemp');
                             if (ptempEl && ptempEl.dataset.isLivePanel !== "true") {
-                                ptempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : atempVal;
+                                ptempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : rawAmbientTemp;
                             }
                         }
 
