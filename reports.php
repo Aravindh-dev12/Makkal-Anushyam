@@ -84,7 +84,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 <button id="menuBtn" class="md:hidden text-green-700 text-2xl focus:outline-none">&#9776;</button>
                 <div>
                     <h2 class="text-lg sm:text-xl font-bold text-gray-800">System Reports</h2>
-                    <p class="text-xs text-gray-500 hidden sm:block">Unified Inverter, VCB & Weather Station (WMOS) Telemetry</p>
+                    <p class="text-xs text-gray-500 hidden sm:block">Separate Inverter / Electrical and WMAS Weather Telemetry Reports</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -102,11 +102,15 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
                 <div class="flex items-center gap-3">
                     <span class="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                        <i class="fa-solid fa-table-cells"></i> Unified Generation & WMS Report
+                        <i class="fa-solid fa-table-cells"></i> Report Type
                     </span>
                 </div>
                 <div class="flex items-center gap-2 w-full lg:w-auto flex-wrap">
                     <select id="plantSelect" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer"></select>
+                    <select id="reportSection" onchange="toggleReportSection()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer">
+                        <option value="inverter">Inverter / Electrical Report</option>
+                        <option value="wmas">WMAS Weather Report</option>
+                    </select>
                     <select id="reportType" onchange="toggleInputs()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer">
                         <option value="daily">Daily Report</option>
                         <option value="monthly">Monthly Report</option>
@@ -126,7 +130,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                         <div class="flex justify-between items-start mb-2">
                             <div>
                                 <h1 class="text-2xl font-black text-gray-900 tracking-tight" id="reportHeaderPlantName"><?php echo htmlspecialchars(strtoupper($pInfo['name'] ?? 'SOLAR ENERGY')); ?></h1>
-                                <h2 id="reportMainTitle" class="text-base font-bold text-emerald-700 mt-0.5">Comprehensive Inverter, VCB & Weather Station (WMS) Report</h2>
+                                <h2 id="reportMainTitle" class="text-base font-bold text-emerald-700 mt-0.5">Inverter / Electrical Report</h2>
                             </div>
                         </div>
                         <div class="report-info-grid grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm mt-4 font-medium text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -192,6 +196,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         });
 
         let lastReportData = null;
+        let currentReportSection = 'inverter';
         let refreshInterval = null;
         let ws = null;
         let wsConnected = false;
@@ -287,7 +292,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         const wsUrl = <?php echo json_encode($wsUrl); ?>;
-        let liveWeather = { rad: 0, ptemp: 0, atemp: 0, wind: 0, hum: 0 };
+        let liveWeather = { rad: null, ptemp: null, atemp: null, wind: null, hum: null, lastAt: 0 };
         let weatherBuckets = {};
 
         function slot15Min(timeStr) {
