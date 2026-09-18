@@ -95,6 +95,21 @@ class SimpleWSClient {
     public function close() { if ($this->socket) { fclose($this->socket); $this->socket = null; } }
 }
 
+function wsNumericValue($value) {
+    if (is_array($value)) {
+        foreach (['value','val','reading','data','result','current','last'] as $key) {
+            if (array_key_exists($key, $value)) {
+                $nested = wsNumericValue($value[$key]);
+                if ($nested !== null) return $nested;
+            }
+        }
+        return null;
+    }
+    if ($value === null || $value === '') return null;
+    $clean = str_replace(',', '', (string)$value);
+    return is_numeric($clean) ? (float)$clean : null;
+}
+
 function fetchLiveData($plant) {
     $ws = new SimpleWSClient();
     if (!$ws->connect('161.97.87.75', 5000)) {
@@ -110,7 +125,7 @@ function fetchLiveData($plant) {
         $frame = $ws->readFrame();
         if ($frame && isset($frame['payload']) && $frame['opcode'] === 'text') {
             $j = json_decode($frame['payload'], true);
-            if ($j && isset($j['unit_id'])) $frames[] = $j;
+            if ($j && (isset($j['unit_id']) || isset($j['task']) || isset($j['device']) || isset($j['deviceName']))) $frames[] = $j;
         }
         usleep(2000);
     }
@@ -122,14 +137,19 @@ function fetchLiveData($plant) {
         $task = strtolower($f['task'] ?? '');
         $dev = strtolower($f['device'] ?? '');
         $v = $f['values'] ?? [];
-        if ($task === 'wmos' || strpos($dev, 'pyranometer') !== false || strpos($dev, 'pannel') !== false || strpos($dev, 'ambient') !== false || strpos($dev, 'wind') !== false || strpos($dev, 'humidity') !== false) {
+        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || strpos($dev, 'pyranometer') !== false || strpos($dev, 'pannel') !== false || strpos($dev, 'ambient') !== false || strpos($dev, 'wind') !== false || strpos($dev, 'humidity') !== false) {
             foreach ($v as $vk => $vv) {
                 $vkl = strtolower($vk);
-                if (strpos($vkl, 'radiation') !== false || strpos($dev, 'pyranometer') !== false || strpos($vkl, 'raw data') !== false) $latest['wms']['radiation'] = floatval($vv);
-                if (strpos($vkl, 'pannel') !== false || strpos($dev, 'pannel') !== false || strpos($vkl, 'panel') !== false) $latest['wms']['panel_temp'] = floatval($vv);
-                if (strpos($vkl, 'ambient') !== false || strpos($dev, 'ambient') !== false) $latest['wms']['ambient_temp'] = floatval($vv);
-                if (strpos($vkl, 'wind') !== false || strpos($dev, 'wind') !== false) $latest['wms']['wind_speed'] = floatval($vv);
-                if (strpos($vkl, 'humidity') !== false || strpos($dev, 'humidity') !== false) $latest['wms']['humidity'] = floatval($vv);
+                if (strpos($vkl, 'radiation') !== false || strpos($dev, 'pyranometer') !== false || strpos($vkl, 'raw data') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['radiation'] = $num; }
+                if (strpos($vkl, 'pannel') !== false || strpos($dev, 'pannel') !== false || strpos($vkl, 'panel') !== false ||
+                    ((strpos($vkl, 'temp') !== false || strpos($vkl, 'temperature') !== false) &&
+                     (strpos($dev, 'pannel') !== false || strpos($dev, 'panel') !== false || strpos($dev, 'module') !== false))) {
+                    $num = wsNumericValue($vv);
+                    if ($num !== null) $latest['wms']['panel_temp'] = $num;
+                }
+                if (strpos($vkl, 'ambient') !== false || strpos($dev, 'ambient') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['ambient_temp'] = $num; }
+                if (strpos($vkl, 'wind') !== false || strpos($dev, 'wind') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['wind_speed'] = $num; }
+                if (strpos($vkl, 'humidity') !== false || strpos($dev, 'humidity') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['humidity'] = $num; }
             }
         }
         if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'inverter' || strpos($dev, 'inverter') !== false)) {
