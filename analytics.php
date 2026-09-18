@@ -130,9 +130,20 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                                 <span>Export Excel</span>
                             </button>
                             <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
-                                <span class="block mb-1 text-right">Inverter / WMAS</span>
+                                <span class="block mb-1 text-right">Live Inverter</span>
                                 <select id="analyticsInverterSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="">Select Inverter</option>
+                                    <option value="">Waiting for live inverter...</option>
+                                </select>
+                            </label>
+                            <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
+                                <span class="block mb-1 text-right">Live WMAS</span>
+                                <select id="analyticsWmasSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                    <option value="">Select WMAS Data</option>
+                                    <option value="wmos:pyranometer">Radiation</option>
+                                    <option value="wmos:panel">Panel Temperature</option>
+                                    <option value="wmos:ambient">Ambient Temperature</option>
+                                    <option value="wmos:wind">Wind Speed</option>
+                                    <option value="wmos:humidity">Humidity</option>
                                 </select>
                             </label>
                         </div>
@@ -159,63 +170,33 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 </section>
 
                 <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-4">
-                        <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMAS / WMOS)
-                        </h3>
-                        <div class="flex items-center gap-2">
-                            <span id="wmosLiveDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                            <span class="text-[10px] font-black text-slate-500 uppercase tracking-wider" id="wmosLiveStatus">Waiting for live telemetry</span>
+                    <div class="flex flex-col sm:flex-row sm:items-end gap-4 mb-5">
+                        <div class="min-w-0">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Today Data</p>
+                            <h2 class="text-xl font-bold text-slate-900">WMAS Live Trend</h2>
+                            <p class="mt-1 text-xs text-slate-500">Select a WMAS measurement above. The graph uses only telemetry received from the live plant WebSocket.</p>
+                        </div>
+                        <div class="ml-auto text-right">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Latest WMAS</p>
+                            <p class="text-lg font-black text-emerald-700"><span id="latestWmasValue">--</span> <span class="text-xs" id="latestWmasUnit"></span></p>
+                            <p class="text-[10px] text-slate-400">Live through <span id="wmasLiveLabel">--</span></p>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[11px] font-black text-orange-800 uppercase tracking-wider">Radiation</span>
-                                <div class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-sun text-sm"></i></div>
+                    <div id="wmasEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 mb-4">Select a WMAS measurement to load its live trend.</div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div>
+                                <h3 class="text-sm font-black text-slate-700" id="wmasTrendTitle">WMAS Data</h3>
+                                <p class="text-[11px] text-slate-400">Actual WebSocket samples only. No hardcoded or estimated sensor values.</p>
                             </div>
-                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-orange-600 text-2xl sm:text-3xl font-mono" id="wmos_rad">--</span><span class="text-sm font-bold text-orange-500">W/m²</span></div>
-                            <p class="text-[10px] text-slate-400 font-medium mt-1">Solar Radiation</p>
-                        </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[11px] font-black text-rose-800 uppercase tracking-wider">Panel Temp</span>
-                                <div class="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center"><i class="fa-solid fa-temperature-high text-sm"></i></div>
+                            <div class="flex items-center gap-2">
+                                <span id="wmasGraphLiveDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                                <span class="text-[10px] font-black text-slate-500 uppercase tracking-wider" id="wmasGraphStatus">Waiting for live telemetry</span>
                             </div>
-                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-rose-700 text-2xl sm:text-3xl font-mono" id="wmos_ptemp">--</span><span class="text-sm font-bold text-rose-500">°C</span></div>
-                            <p class="text-[10px] text-slate-400 font-medium mt-1">Panel Temperature</p>
                         </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[11px] font-black text-amber-800 uppercase tracking-wider">Amb Temp</span>
-                                <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-temperature-half text-sm"></i></div>
-                            </div>
-                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-amber-600 text-2xl sm:text-3xl font-mono" id="wmos_atemp">--</span><span class="text-sm font-bold text-amber-500">°C</span></div>
-                            <p class="text-[10px] text-slate-400 font-medium mt-1">Ambient Temperature</p>
-                        </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[11px] font-black text-sky-800 uppercase tracking-wider">Wind Speed</span>
-                                <div class="w-8 h-8 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center"><i class="fa-solid fa-wind text-sm"></i></div>
-                            </div>
-                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-sky-600 text-2xl sm:text-3xl font-mono" id="wmos_wind">--</span><span class="text-sm font-bold text-sky-500">m/s</span></div>
-                            <p class="text-[10px] text-slate-400 font-medium mt-1">Wind Speed</p>
-                        </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[11px] font-black text-indigo-800 uppercase tracking-wider">Humidity</span>
-                                <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center"><i class="fa-solid fa-droplet text-sm"></i></div>
-                            </div>
-                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-indigo-600 text-2xl sm:text-3xl font-mono" id="wmos_hum">--</span><span class="text-sm font-bold text-indigo-500">%</span></div>
-                            <p class="text-[10px] text-slate-400 font-medium mt-1">Relative Humidity</p>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
-                        <span>Source: live WebSocket telemetry · no cached/mock/default weather values</span>
-                        <span>Last sample: <span class="font-bold text-slate-500" id="wmosLastSample">--</span></span>
+                        <div class="h-[340px] sm:h-[400px]"><canvas id="wmasTrendChart"></canvas></div>
                     </div>
                 </section>
-
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest">Alerts & Recommendations</h3>
@@ -250,6 +231,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         setInterval(() => {
             document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-IN', { hour12: false });
             updateWmosLiveStatus();
+            renderWmasTrend();
         }, 1000);
 
         fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
@@ -276,17 +258,27 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         });
 
         let selectedInverter = '';
+        let selectedWmas = '';
         let analyticsSocket = null;
         let analyticsWmosSocket = null;
         let lastInverterOptionsKey = '';
         let outputTrendChart = null;
+        let wmasTrendChart = null;
         const inverterSelect = document.getElementById('analyticsInverterSelect');
+        const wmasSelect = document.getElementById('analyticsWmasSelect');
         const analyticsLiveLabel = document.getElementById('analyticsLiveLabel');
         const exportButton = document.getElementById('exportAnalyticsExcel');
         const generateExcelButton = document.getElementById('generateAnalyticsExcel');
         const emptyState = document.getElementById('analyticsEmptyState');
         const latestOutputValue = document.getElementById('latestOutputValue');
         const outputTrendTitle = document.getElementById('outputTrendTitle');
+        const wmasEmptyState = document.getElementById('wmasEmptyState');
+        const latestWmasValue = document.getElementById('latestWmasValue');
+        const latestWmasUnit = document.getElementById('latestWmasUnit');
+        const wmasTrendTitle = document.getElementById('wmasTrendTitle');
+        const wmasLiveLabel = document.getElementById('wmasLiveLabel');
+        const wmasGraphLiveDot = document.getElementById('wmasGraphLiveDot');
+        const wmasGraphStatus = document.getElementById('wmasGraphStatus');
 
         const aState = {
             inverters: {},
@@ -330,7 +322,11 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             if (!analyticsRawInverterHistory[key]) analyticsRawInverterHistory[key] = new Map();
             return key;
         }
-        function seedConfiguredInverters() { const count = Math.max(0, parseInt(cfg.inverter_count || 0, 10)); for (let i = 1; i <= count; i += 1) ensureInverter(`Inverter${i}`); populateAnalyticsInverterOptions(); }
+        function seedConfiguredInverters() {
+            // No synthetic inverter options. The dropdown is populated only from
+            // the live device_list or actual inverter telemetry.
+            populateAnalyticsInverterOptions();
+        }
         function populateAnalyticsInverterOptions() {
             if (!inverterSelect) return;
             const current = inverterSelect.value || selectedInverter || '';
@@ -338,7 +334,9 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const optionsKey = names.join('|');
             if (optionsKey === lastInverterOptionsKey) return;
             lastInverterOptionsKey = optionsKey;
-            inverterSelect.innerHTML = ['<option value="">Select Inverter</option>', ...names.map(name => `<option value="${name}">${inverterLabel(name)}</option>`)].join('');
+            inverterSelect.innerHTML = names.length
+                ? ['<option value="">Select Inverter</option>', ...names.map(name => '<option value="' + name + '">' + inverterLabel(name) + '</option>')].join('')
+                : '<option value="">Waiting for live inverter...</option>';
             inverterSelect.value = names.includes(current) ? current : '';
             selectedInverter = inverterSelect.value;
         }
@@ -545,12 +543,10 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function captureAnalyticsWmosMessage(message) {
             if (!message || typeof message !== 'object') return;
             const messageUnit = analyticsMessageUnitId(message);
-            // Some weather frames have no unit_id; those are accepted because this
-            // WebSocket is subscribed only to the selected plant.
-            if (messageUnit && messageUnit !== wsUnitId) return;
-
             const messageTask = message.task || message.pageName || message.type || '';
-            const baseDevice = message.device || message.deviceName || '';
+            const baseDevice = message.device || message.deviceName || (/^inverter$/i.test(String(message.task || message.pageName || '')) ? 'Inverter' : '');
+            const weatherContext = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(messageTask) + ' ' + String(baseDevice));
+            if (messageUnit && messageUnit !== wsUnitId && !weatherContext) return;
             const defaultTime = message.time || message.timestamp || message.ts || '';
             let updated = false;
 
@@ -606,11 +602,67 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
 
         function requestSelectedWmosToday() {
-            const source = WMOS_EXPORT_SOURCES[inverterSelect?.value || ''];
+            const source = WMOS_EXPORT_SOURCES[wmasSelect?.value || ''];
             if (!source || !analyticsSocket || analyticsSocket.readyState !== WebSocket.OPEN) return;
             analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
+        function renderWmasLiveStatus() {
+            const age = aState.weather.lastReceivedAt ? Date.now() - aState.weather.lastReceivedAt : Infinity;
+            if (!wmasGraphLiveDot || !wmasGraphStatus) return;
+            if (age <= 5000) {
+                wmasGraphLiveDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+                wmasGraphStatus.className = 'text-[10px] font-black text-emerald-600 uppercase tracking-wider';
+                wmasGraphStatus.textContent = 'Live Telemetry';
+            } else if (age <= 15000) {
+                wmasGraphLiveDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+                wmasGraphStatus.className = 'text-[10px] font-black text-amber-600 uppercase tracking-wider';
+                wmasGraphStatus.textContent = 'Telemetry delayed';
+            } else {
+                wmasGraphLiveDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+                wmasGraphStatus.className = 'text-[10px] font-black text-slate-500 uppercase tracking-wider';
+                wmasGraphStatus.textContent = 'Waiting for live telemetry';
+            }
+        }
+
+        function initWmasTrendChart() {
+            const canvas = document.getElementById('wmasTrendChart');
+            if (!canvas) return;
+            wmasTrendChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'WMAS', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.10)', pointRadius: 2, pointHoverRadius: 5, borderWidth: 2.5, tension: 0.28, spanGaps: true, fill: true }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { type: 'category', offset: false, grid: { display: false }, ticks: { color: '#64748b', autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0, font: { size: 10 } }, title: { display: true, text: 'Time', color: '#64748b', font: { size: 10, weight: 'bold' } } },
+                        y: { beginAtZero: false, grid: { color: '#e2e8f0' }, ticks: { color: '#64748b', font: { size: 10 } } }
+                    },
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label(context) { return 'WMAS: ' + Number(context.parsed.y || 0).toFixed(2) + ' ' + (latestWmasUnit?.textContent || ''); } } } }
+                }
+            });
+        }
+
+        function renderWmasTrend() {
+            const sourceKey = wmasSelect?.value || '';
+            const source = WMOS_EXPORT_SOURCES[sourceKey];
+            const raw = source ? Array.from(analyticsWmosHistory[sourceKey]?.values() || []).sort((a,b) => a.timestamp - b.timestamp) : [];
+            const hasSelection = !!source;
+            const hasData = raw.length > 0;
+            if (wmasEmptyState) {
+                wmasEmptyState.classList.toggle('hidden', hasSelection && hasData);
+                wmasEmptyState.textContent = !hasSelection ? 'Select a WMAS measurement to load its live trend.' : 'Waiting for live sensor telemetry for this WMAS measurement.';
+            }
+            if (wmasTrendTitle) wmasTrendTitle.textContent = source ? source.label : 'WMAS Data';
+            if (latestWmasUnit) latestWmasUnit.textContent = source?.unit || '';
+            const latest = hasData ? raw[raw.length - 1] : null;
+            if (latestWmasValue) latestWmasValue.textContent = latest ? Number(latest.value).toFixed(source.decimals) : '--';
+            if (wmasLiveLabel) wmasLiveLabel.textContent = latest ? new Date(latest.timestamp).toLocaleTimeString('en-IN', {hour12:false}) : '--';
+            if (wmasTrendChart) {
+                wmasTrendChart.data.labels = raw.map(row => new Date(row.timestamp).toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',hour12:false}));
+                wmasTrendChart.data.datasets[0].data = raw.map(row => Number(Number(row.value).toFixed(source?.decimals ?? 2)));
+                wmasTrendChart.update('none');
+            }
+            renderWmasLiveStatus();
+        }
         function updateAnalyticsCards() {
             const inverterRows = Object.values(aState.inverters);
             const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0);
@@ -623,7 +675,14 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 availEl.innerHTML = '-- <span class="text-sm font-bold text-emerald-600">%</span>';
                 return;
             }
-            const totalInv = Math.max(parseInt(cfg.inverter_count || 0, 10), liveRows.length);
+            const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0 && (Date.now() - Number(row.lastSeen)) <= 5000);
+            if (!liveRows.length) {
+                document.getElementById('perf_val').innerHTML = '-- <span class="text-sm font-bold text-blue-600">%</span>';
+                document.getElementById('yield_val').innerHTML = '-- <span class="text-sm font-bold text-purple-600">kWh</span>';
+                document.getElementById('avail_val').innerHTML = '-- <span class="text-sm font-bold text-emerald-600">%</span>';
+                return;
+            }
+            const totalInv = liveRows.length;
             const activeInv = liveRows.filter(row => row.online && Number(row.outputKw) > GENERATION_THRESHOLD_KW).length;
             const livePower = liveRows.reduce((sum, row) => sum + (Number(row.outputKw) || 0), 0);
             const liveEnergy = liveRows.reduce((sum, row) => sum + (Number(row.dailyGen) || 0), 0);
@@ -769,17 +828,43 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function waitForHistory(test,timeoutMs=3500){return new Promise(resolve=>{if(test()){resolve(true);return;}const started=Date.now(),timer=setInterval(()=>{if(test()){clearInterval(timer);resolve(true);}else if(Date.now()-started>=timeoutMs){clearInterval(timer);resolve(false);}},100);});}
 
         async function generateSelectedAnalyticsExcel(){
-            const selected=inverterSelect?.value||'';if(!selected)return;const oldHtml=generateExcelButton.innerHTML;generateExcelButton.disabled=true;generateExcelButton.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i><span>Loading full history...</span>';
-            try{
-                if(WMOS_EXPORT_SOURCES[selected]){requestSelectedWmosToday();await waitForHistory(()=>analyticsWmosHistory[selected]?.size>0);if(!exportSelectedWmosExcel(selected)){alert('No WMOS WebSocket history is available yet for the selected source.');}}
-                else{selectedInverter=selected;requestSelectedInverterToday();await waitForHistory(()=>analyticsRawInverterHistory[selected]?.size>0);if(!exportSelectedInverterExcel()){alert('No inverter WebSocket history is available yet for the selected inverter.');}}
-            }finally{generateExcelButton.innerHTML=oldHtml;generateExcelButton.disabled=!selected;}
+            const selected = wmasSelect?.value || inverterSelect?.value || '';
+            if (!selected) return;
+            const oldHtml = generateExcelButton.innerHTML;
+            generateExcelButton.disabled = true;
+            generateExcelButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Loading full history...</span>';
+            try {
+                if (WMOS_EXPORT_SOURCES[selected]) {
+                    selectedWmas = selected;
+                    requestSelectedWmosToday();
+                    await waitForHistory(() => analyticsWmosHistory[selected]?.size > 0);
+                    if (!exportSelectedWmosExcel(selected)) alert('No live WMAS WebSocket history is available yet for the selected source.');
+                } else {
+                    selectedInverter = selected;
+                    requestSelectedInverterToday();
+                    await waitForHistory(() => analyticsRawInverterHistory[selected]?.size > 0);
+                    if (!exportSelectedInverterExcel()) alert('No live inverter WebSocket history is available yet for the selected inverter.');
+                }
+            } finally {
+                generateExcelButton.innerHTML = oldHtml;
+                generateExcelButton.disabled = !inverterSelect?.value && !wmasSelect?.value;
+            }
         }
 
-        // Window-capture runs before the legacy WMOS helper can stop propagation.
-        window.addEventListener('change',event=>{const select=event.target;if(!(select instanceof HTMLSelectElement)||select.id!=='analyticsInverterSelect')return;const selected=select.value||'';generateExcelButton.disabled=!selected;if(WMOS_EXPORT_SOURCES[selected])requestSelectedWmosToday();},true);
-        inverterSelect?.addEventListener('change',()=>{selectedInverter=inverterSelect.value;renderOutputTrend();if(!WMOS_EXPORT_SOURCES[selectedInverter])requestSelectedInverterToday();});
-        exportButton?.addEventListener('click',exportSelectedInverterExcel);generateExcelButton?.addEventListener('click',generateSelectedAnalyticsExcel);
+        inverterSelect?.addEventListener('change', () => {
+            selectedInverter = inverterSelect.value || '';
+            renderOutputTrend();
+            if (selectedInverter) requestSelectedInverterToday();
+            generateExcelButton.disabled = !selectedInverter && !selectedWmas;
+        });
+        wmasSelect?.addEventListener('change', () => {
+            selectedWmas = wmasSelect.value || '';
+            renderWmasTrend();
+            if (selectedWmas) requestSelectedWmosToday();
+            generateExcelButton.disabled = !selectedInverter && !selectedWmas;
+        });
+        exportButton?.addEventListener('click', exportSelectedInverterExcel);
+        generateExcelButton?.addEventListener('click', generateSelectedAnalyticsExcel);
 
         initOutputTrendChart();
         seedConfiguredInverters();
