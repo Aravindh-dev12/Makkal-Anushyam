@@ -158,6 +158,64 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     </div>
                 </section>
 
+                <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-4">
+                        <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMOS)
+                        </h3>
+                        <div class="flex items-center gap-2">
+                            <span id="wmosLiveDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                            <span class="text-[10px] font-black text-slate-500 uppercase tracking-wider" id="wmosLiveStatus">Waiting for live telemetry</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-orange-800 uppercase tracking-wider">Radiation</span>
+                                <div class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-sun text-sm"></i></div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-orange-600 text-2xl sm:text-3xl font-mono" id="wmos_rad">--</span><span class="text-sm font-bold text-orange-500">W/m²</span></div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Solar Radiation</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-rose-800 uppercase tracking-wider">Panel Temp</span>
+                                <div class="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center"><i class="fa-solid fa-temperature-high text-sm"></i></div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-rose-700 text-2xl sm:text-3xl font-mono" id="wmos_ptemp">--</span><span class="text-sm font-bold text-rose-500">°C</span></div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Panel Temperature</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-amber-800 uppercase tracking-wider">Amb Temp</span>
+                                <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-temperature-half text-sm"></i></div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-amber-600 text-2xl sm:text-3xl font-mono" id="wmos_atemp">--</span><span class="text-sm font-bold text-amber-500">°C</span></div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Ambient Temperature</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-sky-800 uppercase tracking-wider">Wind Speed</span>
+                                <div class="w-8 h-8 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center"><i class="fa-solid fa-wind text-sm"></i></div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-sky-600 text-2xl sm:text-3xl font-mono" id="wmos_wind">--</span><span class="text-sm font-bold text-sky-500">m/s</span></div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Wind Speed</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-black text-indigo-800 uppercase tracking-wider">Humidity</span>
+                                <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center"><i class="fa-solid fa-droplet text-sm"></i></div>
+                            </div>
+                            <div class="flex items-baseline gap-1 mt-1"><span class="font-black text-indigo-600 text-2xl sm:text-3xl font-mono" id="wmos_hum">--</span><span class="text-sm font-bold text-indigo-500">%</span></div>
+                            <p class="text-[10px] text-slate-400 font-medium mt-1">Relative Humidity</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+                        <span>Source: live WebSocket telemetry · no mock/default weather values</span>
+                        <span>Last sample: <span class="font-bold text-slate-500" id="wmosLastSample">--</span></span>
+                    </div>
+                </section>
+
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest">Alerts & Recommendations</h3>
@@ -180,9 +238,9 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         const plantConfig = <?php echo json_encode($analyticsPlantConfig, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE); ?>;
         const plantNames = Object.fromEntries(Object.entries(plantConfig).map(([id, cfg]) => [id, cfg.name]));
         const cfg = plantConfig[currentPlant] || { capacity: 1.0, inverter_count: 0 };
-        const COMMON_WMOS_UNIT_ID = 'via-3mw';
-        const commonWmosConfig = Object.values(plantConfig).find(item => String(item?.ws_unit_id || '') === COMMON_WMOS_UNIT_ID) || cfg;
-        const COMMON_WMOS_WS_URL = commonWmosConfig.ws_url || '';
+        // WMOS/WMAS telemetry is broadcast through the same live SCADA stream used by Home.
+        const COMMON_WMOS_UNIT_ID = wsUnitId;
+        const COMMON_WMOS_WS_URL = cfg.ws_url || '';
         const TREND_START_MINUTE = 6 * 60;
         const TREND_END_MINUTE = 19 * 60;
         const TREND_BUCKET_MINUTES = 5;
@@ -191,6 +249,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         document.getElementById('pageTitle').textContent = (plantNames[currentPlant] || currentPlant) + ' - Analytics';
         setInterval(() => {
             document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-IN', { hour12: false });
+            updateWmosLiveStatus();
         }, 1000);
 
         fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
@@ -229,7 +288,20 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         const latestOutputValue = document.getElementById('latestOutputValue');
         const outputTrendTitle = document.getElementById('outputTrendTitle');
 
-        const aState = { inverters: {}, history: {} };
+        const aState = {
+            inverters: {},
+            history: {},
+            weather: {
+                radiation: null,
+                panelTemp: null,
+                ambientTemp: null,
+                windSpeed: null,
+                humidity: null,
+                lastReceivedAt: 0,
+                lastSampleAt: 0,
+                lastDevice: ''
+            }
+        };
         const analyticsRawInverterHistory = {};
 
         const WMOS_EXPORT_SOURCES = {
@@ -339,34 +411,151 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             if (!lastInverterOptionsKey.includes(key)) populateAnalyticsInverterOptions(); return true;
         }
 
-        function normalizeWmosMetricName(value) { return String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-        function unwrapWmosValue(value, depth = 0) { if (value === null || value === undefined || value === '' || depth > 3) return null; if (typeof value !== 'object') return value; for (const key of ['value','val','reading','data','result','current','last']) { if (!Object.prototype.hasOwnProperty.call(value,key)) continue; const next=unwrapWmosValue(value[key],depth+1); if (next!==null) return next; } return null; }
-        function wmosNumber(value) { const raw = unwrapWmosValue(value); if (raw === null || raw === undefined || raw === '') return null; const number = parseFloat(String(raw).replace(/,/g,'')); return Number.isFinite(number) ? number : null; }
-        function wmosSourceForDevice(device) { const name=normalizeWmosMetricName(device); if (/pyranometer|pyrimeter/.test(name)) return 'wmos:pyranometer'; if (/pannel.*temp|panel.*temp|module.*temp/.test(name)) return 'wmos:panel'; if (/ambient.*temp/.test(name)) return 'wmos:ambient'; if (/humidity/.test(name)) return 'wmos:humidity'; if (/^wind$|wind.*speed/.test(name)) return 'wmos:wind'; return ''; }
-
-        function captureWmosReading(sourceKey, values, sourceTime, device = '') {
-            const source = WMOS_EXPORT_SOURCES[sourceKey]; if (!source || !values || typeof values !== 'object') return false;
-            const wanted = source.keys.map(normalizeWmosMetricName); let value = null;
-            for (const [key, raw] of Object.entries(values)) { if (!wanted.includes(normalizeWmosMetricName(key))) continue; value = wmosNumber(raw); if (value !== null) break; }
-            if (value === null) return false;
-            const timestamp = parseTelemetryTime(sourceTime); if (localDateKey(timestamp) !== todayKey()) return false;
-            analyticsWmosHistory[sourceKey].set(timestamp.getTime(), { timestamp: timestamp.getTime(), value, device: device || source.device, values: cloneWsValues(values) });
-            if (inverterSelect?.value === sourceKey) generateExcelButton.disabled = false; return true;
+        function normalizeWmosMetricName(value) {
+            return String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
         }
+        function unwrapWmosValue(value, depth = 0) {
+            if (value === null || value === undefined || value === '' || depth > 4) return null;
+            if (typeof value !== 'object') return value;
+            for (const key of ['value', 'val', 'reading', 'data', 'result', 'current', 'last']) {
+                if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+                const next = unwrapWmosValue(value[key], depth + 1);
+                if (next !== null) return next;
+            }
+            return null;
+        }
+        function wmosNumber(value) {
+            const raw = unwrapWmosValue(value);
+            if (raw === null || raw === undefined || raw === '') return null;
+            const number = parseFloat(String(raw).replace(/,/g, ''));
+            return Number.isFinite(number) ? number : null;
+        }
+        function wmosSourceForDevice(device) {
+            const name = normalizeWmosMetricName(device);
+            if (/pyranometer|pyrimeter/.test(name)) return 'wmos:pyranometer';
+            if (/pannel.*temp|panel.*temp|module.*temp/.test(name)) return 'wmos:panel';
+            if (/ambient.*temp/.test(name)) return 'wmos:ambient';
+            if (/humidity/.test(name)) return 'wmos:humidity';
+            if (/^wind$|wind.*speed/.test(name)) return 'wmos:wind';
+            return '';
+        }
+        function readWmosMetricValue(values, directKeys, patterns = []) {
+            if (!values || typeof values !== 'object') return null;
+            const direct = new Set(directKeys.map(normalizeWmosMetricName));
+            for (const [key, raw] of Object.entries(values)) {
+                const normalized = normalizeWmosMetricName(key);
+                if (!direct.has(normalized)) continue;
+                const value = wmosNumber(raw);
+                if (value !== null) return value;
+            }
+            for (const [key, raw] of Object.entries(values)) {
+                const normalized = normalizeWmosMetricName(key);
+                if (!patterns.some(rx => rx.test(normalized))) continue;
+                const value = wmosNumber(raw);
+                if (value !== null) return value;
+            }
+            return null;
+        }
+        function setWmosPanelValue(elementId, value, decimals) {
+            const el = document.getElementById(elementId);
+            if (!el || value === null || value === undefined || !Number.isFinite(Number(value))) return false;
+            el.textContent = Number(value).toFixed(decimals);
+            el.dataset.live = 'true';
+            return true;
+        }
+        function recordWmosHistory(sourceKey, value, sourceTime, device) {
+            if (!analyticsWmosHistory[sourceKey] || value === null || value === undefined) return;
+            const timestamp = parseTelemetryTime(sourceTime);
+            if (localDateKey(timestamp) !== todayKey()) return;
+            analyticsWmosHistory[sourceKey].set(timestamp.getTime(), {
+                timestamp: timestamp.getTime(),
+                value: Number(value),
+                device: device || WMOS_EXPORT_SOURCES[sourceKey].device
+            });
+        }
+        function captureWmosValues(values, sourceTime, device = '', task = '') {
+            if (!values || typeof values !== 'object') return false;
+            const context = normalizeWmosMetricName(task + ' ' + device);
+            const valueKeys = Object.keys(values).map(normalizeWmosMetricName);
+            const weatherSignal =
+                /(?:^|\s)(?:wmos|wmas)(?:\s|$)|weather|pyranometer|pyrimeter|panel|pannel|ambient|wind|humidity|radiation|irradiance/.test(context) ||
+                valueKeys.some(key => /pyran|radiat|irradiance|pannel.*temp|panel.*temp|module.*temp|ambient.*temp|wind.*speed|humidity/.test(key));
+            if (!weatherSignal || (/inverter|^inv\b/.test(context) && !/(?:^|\s)(?:wmos|wmas|weather)(?:\s|$)/.test(context))) return false;
 
+            const rad = readWmosMetricValue(values, ['raw data', 'radiation', 'solar radiation', 'irradiance'], [/^raw data$/, /radiation/, /irradiance/, /pyran/]);
+            const panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/]);
+            const ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
+            const wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'Wind Speed'], [/wind.*speed/, /^windspeed$/]);
+            const humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
+
+            let updated = false;
+            if (rad !== null) { setWmosPanelValue('wmos_rad', rad, 0); recordWmosHistory('wmos:pyranometer', rad, sourceTime, device || 'Pyranometer'); updated = true; }
+            if (panel !== null) { setWmosPanelValue('wmos_ptemp', panel, 1); recordWmosHistory('wmos:panel', panel, sourceTime, device || 'pannel temperature'); updated = true; }
+            if (ambient !== null) { setWmosPanelValue('wmos_atemp', ambient, 1); recordWmosHistory('wmos:ambient', ambient, sourceTime, device || 'Ambient Temperature'); updated = true; }
+            if (wind !== null) { setWmosPanelValue('wmos_wind', wind, 1); recordWmosHistory('wmos:wind', wind, sourceTime, device || 'Wind'); updated = true; }
+            if (humidity !== null) { setWmosPanelValue('wmos_hum', humidity, 1); recordWmosHistory('wmos:humidity', humidity, sourceTime, device || 'Humidity'); updated = true; }
+
+            if (updated) {
+                const now = Date.now();
+                aState.weather.lastReceivedAt = now;
+                aState.weather.lastSampleAt = sourceTime ? parseTelemetryTime(sourceTime).getTime() : now;
+                aState.weather.lastDevice = device || task || 'WMOS';
+                const sampleLabel = document.getElementById('wmosLastSample');
+                if (sampleLabel) sampleLabel.textContent = new Date(aState.weather.lastSampleAt).toLocaleTimeString('en-IN', { hour12: false });
+                updateWmosLiveStatus();
+            }
+            return updated;
+        }
+        function updateWmosLiveStatus() {
+            const dot = document.getElementById('wmosLiveDot');
+            const label = document.getElementById('wmosLiveStatus');
+            if (!dot || !label) return;
+            const age = aState.weather.lastReceivedAt ? Date.now() - aState.weather.lastReceivedAt : Infinity;
+            if (age <= 5000) {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+                label.className = 'text-[10px] font-black text-emerald-600 uppercase tracking-wider';
+                label.textContent = 'Live Telemetry';
+            } else if (age <= 15000) {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+                label.className = 'text-[10px] font-black text-amber-600 uppercase tracking-wider';
+                label.textContent = 'Telemetry delayed';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+                label.className = 'text-[10px] font-black text-slate-500 uppercase tracking-wider';
+                label.textContent = 'Waiting for live telemetry';
+            }
+        }
         function captureAnalyticsWmosMessage(message) {
             if (!message || typeof message !== 'object') return;
-            const unit = message.unit_id || message.request?.unit_id || message.unitId || message.request?.unitId || '';
-            if (unit && unit !== COMMON_WMOS_UNIT_ID) return;
+            const messageTask = message.task || message.pageName || message.type || '';
             const baseDevice = message.device || message.deviceName || '';
-            if (message.values && typeof message.values === 'object') { const sourceKey = wmosSourceForDevice(baseDevice); if (sourceKey) captureWmosReading(sourceKey, message.values, message.time || message.timestamp || message.ts || '', baseDevice); }
-            if (Array.isArray(message.data)) message.data.forEach(row => { if (!row || typeof row !== 'object') return; const device = row.device || row.deviceName || baseDevice, sourceKey = wmosSourceForDevice(device); if (!sourceKey) return; const values = row.values && typeof row.values === 'object' ? row.values : row; captureWmosReading(sourceKey, values, row.time || row.timestamp || row.ts || message.time || message.timestamp || '', device); });
+            let updated = false;
+
+            if (message.values && typeof message.values === 'object') {
+                updated = captureWmosValues(message.values, message.time || message.timestamp || message.ts || '', baseDevice, messageTask) || updated;
+            }
+
+            if (Array.isArray(message.data)) {
+                message.data.forEach(row => {
+                    if (!row || typeof row !== 'object') return;
+                    const device = row.device || row.deviceName || baseDevice;
+                    const task = row.task || row.pageName || messageTask;
+                    const values = row.values && typeof row.values === 'object'
+                        ? row.values
+                        : row.data && typeof row.data === 'object'
+                            ? row.data
+                            : row;
+                    updated = captureWmosValues(values, row.time || row.timestamp || row.ts || message.time || message.timestamp || '', device, task) || updated;
+                });
+            }
+
+            if (updated) updateWmosLiveStatus();
         }
 
         function requestSelectedWmosToday() {
             const source = WMOS_EXPORT_SOURCES[inverterSelect?.value || ''];
             if (!source || !analyticsWmosSocket || analyticsWmosSocket.readyState !== WebSocket.OPEN) return;
-            analyticsWmosSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
+            if (analyticsSocket?.readyState === WebSocket.OPEN) analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
         function updateAnalyticsCards() {
@@ -402,16 +591,41 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
         function connectWSAnalytics(){
             const wsUrl=(cfg.ws_url || "wss://vinobasolar.scadahub.in:5001"); if(!wsUrl)return; const ws=new WebSocket(wsUrl); analyticsSocket=ws;
-            ws.onopen=function(){document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]';ws.send(JSON.stringify({type:'subscribe',unit_id:wsUnitId}));ws.send(JSON.stringify({type:'get_devices',unit_id:wsUnitId}));requestSelectedInverterToday();};
-            ws.onmessage=function(event){try{const message=JSON.parse(event.data),messageUnitId=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';if(messageUnitId&&messageUnitId!==wsUnitId)return;window.LiveWsStore?.storeMessage?.(message,currentPlant);if(message.type==='device_list'){handleDeviceList(message.devices||[]);return;}let updated=false;normalizeWsRows(message).forEach(row=>{const device=row.device||message.device||message.deviceName||'';if(!isInverterDeviceName(device))return;if(applyInverterReading(device,row.values,row.time||''))updated=true;});if(updated){updateAnalyticsCards();renderOutputTrend();}}catch(err){}};
+             ws.onopen=function(){
+                document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]';
+                ws.send(JSON.stringify({type:'subscribe',unit_id:wsUnitId}));
+                if(wsUnitId!=='vinoba-velliyanai') ws.send(JSON.stringify({type:'subscribe',unit_id:'vinoba-velliyanai'}));
+                ws.send(JSON.stringify({type:'get_devices',unit_id:wsUnitId}));
+                requestSelectedInverterToday();
+            };
+             ws.onmessage=function(event){
+                try {
+                    const message=JSON.parse(event.data);
+                    // Process WMOS/WMAS before unit filtering: weather broadcasts may
+                    // carry a weather-unit id while Home receives them on this socket.
+                    captureAnalyticsWmosMessage(message);
+                    const messageUnitId=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';
+                    window.LiveWsStore?.storeMessage?.(message,currentPlant);
+                    if(message.type==='device_list'){
+                        handleDeviceList(message.devices||[]);
+                        return;
+                    }
+                    if(messageUnitId&&messageUnitId!==wsUnitId)return;
+                    let updated=false;
+                    normalizeWsRows(message).forEach(row=>{
+                        const device=row.device||message.device||message.deviceName||'';
+                        if(!isInverterDeviceName(device))return;
+                        if(applyInverterReading(device,row.values,row.time||''))updated=true;
+                    });
+                    if(updated){updateAnalyticsCards();renderOutputTrend();}
+                } catch(err){}
+            };
             ws.onclose=function(){if(analyticsSocket===ws)analyticsSocket=null;document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-red-500 rounded-full';setTimeout(connectWSAnalytics,2000);};
         }
 
         function connectWSAnalyticsWmos(){
-            if(!COMMON_WMOS_WS_URL || COMMON_WMOS_WS_URL === (cfg.ws_url || ''))return;const ws=new WebSocket(COMMON_WMOS_WS_URL);analyticsWmosSocket=ws;
-            ws.onopen=function(){ws.send(JSON.stringify({type:'subscribe',unit_id:COMMON_WMOS_UNIT_ID}));ws.send(JSON.stringify({type:'get_devices',unit_id:COMMON_WMOS_UNIT_ID}));requestSelectedWmosToday();};
-            ws.onmessage=function(event){try{const message=JSON.parse(event.data),unit=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';if(unit&&unit!==COMMON_WMOS_UNIT_ID)return;captureAnalyticsWmosMessage(message);if(message.type==='device_list')requestSelectedWmosToday();}catch(err){}};
-            ws.onclose=function(){if(analyticsWmosSocket===ws)analyticsWmosSocket=null;setTimeout(connectWSAnalyticsWmos,3000);};
+            // WMOS/WMAS is streamed by the same live plant WebSocket above.
+            analyticsWmosSocket = null;
         }
 
         // Builds a complete minute-by-minute report only between the first and
