@@ -183,142 +183,24 @@ function pf(v){if(v===null)return null;let n=Math.abs(v);if(n>1.2&&n<=100)n/=100
 function stringStats(values){
  const directStrings=[];
  for(const [k,v] of Object.entries(values||{})){
-  const m=k.match(/^string\\s*(\\d+)\\s*current$/i);
+  const m=k.match(/^string\s*(\d+)\s*current$/i);
   if(!m)continue;
   const n=parseInt(m[1],10),curr=num(v);
   if(curr===null)continue;
-  const vk=Object.keys(values||{}).find(key=>new RegExp('^string\\\\s*'+n+'\\\\s*volt(age)?function timestamp(raw){
- const s=String(raw||'').trim(); if(!s)return new Date();
- if(/[zZ]$|[+-]\\d{2}:?\\d{2}$/.test(s)){const d=new Date(s);if(!isNaN(d))return d}
- let f=s.match(/(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
- if(f)return new Date(+f[1],+f[2]-1,+f[3],+f[4],+f[5],+(f[6]||0));
- f=s.match(/(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
- if(f)return new Date(+f[3],+f[2]-1,+f[1],+f[4],+f[5],+(f[6]||0));
- const t=s.match(/\\b(\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);if(t){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate(),+t[1],+t[2],+(t[3]||0))}
- const d=new Date(s);return isNaN(d)?new Date():d;
-}
-function today(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function rowsFromMessage(msg){
- const out=[],base=msg.device||msg.deviceName||'';
- if(msg.values&&typeof msg.values==='object')out.push({device:base,values:msg.values,time:msg.time||msg.timestamp||msg.ts||''});
- if(Array.isArray(msg.data))msg.data.forEach(r=>{if(!r||typeof r!=='object')return;out.push({device:r.device||r.deviceName||base,values:r.values&&typeof r.values==='object'?r.values:r,time:r.time||r.timestamp||r.ts||msg.time||msg.timestamp||''})});
- return out;
-}
-function applyReading(device,values,sourceTime){
- if(!isInverter(device)||!values)return false;
- const key=ensureInverter(device), x=outputFrom(values), d=timestamp(sourceTime), st=state.inverters[key];
- if(x.power!==null)st.power=x.power;
- if(x.daily!==null)st.dailyGen=x.daily;
- if(x.total!==null)st.totalGen=x.total;
- if(x.reactive!==null)st.reactive=x.reactive;
- if(x.pf!==null)st.pf=x.pf;
- if(x.eff!==null)st.eff=x.eff;
- if(x.va!==null)st.voltage=x.va;
- if(x.freq!==null)st.freq=x.freq;
- if(x.strings.total){st.activeStrings=x.strings.active;st.totalStrings=x.strings.total;}
- st.workState=x.work||st.workState; st.statusText=x.status||st.statusText; st.fault=x.fault; st.alarm=x.alarm;
- st.lastUpdate=d.getTime();
- const status=(x.work+' '+x.status).toLowerCase();
- const recent=(Date.now()-d.getTime())<=120000;
- st.online=recent&&!/offline|disconnect|fault|trip|error/.test(status)&&!x.fault;
- if(today(d)===today()&&x.power!==null)state.history[key].set(d.getTime(),{timestamp:d.getTime(),power:x.power,source:x.source,daily:x.daily,values});
- return x.power!==null||x.daily!==null;
-}
-function seedConfigured(){const n=Math.max(0,parseInt(PLANTS[currentPlant]?.inverter_count||0,10));for(let i=1;i<=n;i++)ensureInverter('Inverter'+i);populateSources();}
-function populateSources(){
- const sel=document.getElementById('analyticsSourceSelect'),current=selectedSource||sel.value||'';
- const names=Object.keys(state.inverters).sort((a,b)=>(parseInt(a.match(/\\d+/)?.[0]||0)-parseInt(b.match(/\\d+/)?.[0]||0))||a.localeCompare(b));
- sel.innerHTML='<option value="">Select Inverter</option>'+names.map(k=>'<option value="'+k+'">'+inverterLabel(k)+'</option>').join('');
- sel.value=names.includes(current)?current:'';
- if(sel.value!==selectedSource){selectedSource=sel.value;renderTrend();}
-}
-function renderSnapshot(){
- const body=document.getElementById('snapshotBody'),names=Object.keys(state.inverters).sort((a,b)=>parseInt(a.match(/\\d+/)?.[0]||0)-parseInt(b.match(/\\d+/)?.[0]||0));
- if(!names.length){body.innerHTML='<tr><td colspan="8" class="p-8 text-center text-slate-400">No inverter telemetry received.</td></tr>';return}
- let total=0,energy=0,online=0;
- body.innerHTML=names.map(k=>{const s=state.inverters[k],age=s.lastUpdate?Math.max(0,Math.round((Date.now()-s.lastUpdate)/1000)):99999;total+=Number(s.power)||0;energy+=Number(s.dailyGen)||0;if(s.online)online++;
-   const fault=!!s.fault,status=fault?'FAULT':(s.online?(Number(s.power)>GENERATION_THRESHOLD_KW?'ACTIVE':'READY'):'OFFLINE');
-   const cls=fault?'bg-red-100 text-red-700':(s.online?(Number(s.power)>GENERATION_THRESHOLD_KW?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'):'bg-slate-100 text-slate-500');
-   return '<tr><td class="p-3 font-bold">'+inverterLabel(k)+'</td><td class="p-3 text-right font-mono font-bold text-blue-600">'+(Number(s.power)||0).toFixed(2)+'</td><td class="p-3 text-right font-mono text-purple-600">'+(Number(s.dailyGen)||0).toFixed(2)+'</td><td class="p-3 text-center">'+(s.activeStrings||'--')+' / '+(s.totalStrings||'--')+'</td><td class="p-3 text-right">'+(Number(s.voltage)||0).toFixed(1)+'</td><td class="p-3 text-right">'+(Number(s.freq)||0).toFixed(2)+'</td><td class="p-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-black '+cls+'">'+status+'</span></td><td class="p-3 text-right text-slate-500">'+(s.lastUpdate?new Date(s.lastUpdate).toLocaleTimeString('en-IN',{hour12:false})+' · '+age+'s':'--')+'</td></tr>'
- }).join('');
- const cfg=PLANTS[currentPlant]||{capacity:2,inverter_count:names.length},cap=(Number(cfg.capacity)||2)*1000;
- document.getElementById('comb_power').innerHTML=total.toFixed(2)+' <span class="text-sm font-bold text-blue-600">kW</span>';
- document.getElementById('yield_val').innerHTML=energy.toFixed(2)+' <span class="text-sm font-bold text-purple-600">kWh</span>';
- document.getElementById('avail_val').innerHTML=((online/Math.max(names.length,Number(cfg.inverter_count)||names.length))*100).toFixed(1)+' <span class="text-sm font-bold text-emerald-600">%</span>';
- document.getElementById('inv_active_count').textContent=online+' / '+names.length+' communicating';
- document.getElementById('perf_val').innerHTML=((total/cap)*100).toFixed(1)+' <span class="text-sm font-bold text-amber-600">%</span>';
- document.getElementById('snapshotStatus').textContent='Live · '+new Date().toLocaleTimeString('en-IN',{hour12:false});
-}
-function displayedRows(){
- if(!selectedSource)return [];
- const raw=Array.from(state.history[selectedSource]?.values()||[]).filter(r=>today(new Date(r.timestamp))===today()).sort((a,b)=>a.timestamp-b.timestamp);
- const first=raw.findIndex(r=>Number(r.power)>GENERATION_THRESHOLD_KW);
- const rows=first>=0?raw.slice(first):raw;
- const bucket=new Map();rows.forEach(r=>bucket.set(Math.floor(r.timestamp/300000),r));
- const shown=Array.from(bucket.values()).sort((a,b)=>a.timestamp-b.timestamp);
- if(rows.length&&(!shown.length||shown[shown.length-1].timestamp!==rows[rows.length-1].timestamp))shown.push(rows[rows.length-1]);
- return shown;
-}
-function renderTrend(){
- const has=!!selectedSource,rows=displayedRows(),gen=rows.length>0;
- document.getElementById('emptyState').textContent=has?(gen?'':'Waiting for this inverter to start generating output today.'):'Select an inverter to load today’s output trend.';
- document.getElementById('emptyState').classList.toggle('hidden',has&&gen);
- document.getElementById('downloadExcel').disabled=!has||!gen;
- document.getElementById('outputTrendTitle').textContent=has?inverterLabel(selectedSource)+' Output':'Inverter Output';
- const latest=rows[rows.length-1];
- document.getElementById('latestOutputValue').textContent=latest?Number(latest.power).toFixed(2):'--';
- document.getElementById('analyticsLiveLabel').textContent=latest?new Date(latest.timestamp).toLocaleTimeString('en-IN',{hour12:false}):'--';
- if(!chart)return;
- chart.data.labels=rows.map(r=>new Date(r.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}));
- chart.data.datasets[0].data=rows.map(r=>Number(Number(r.power).toFixed(2)));
- chart.update('none');
-}
-function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(d=>{const n=d.name||d.device||'';if(isInverter(n))ensureInverter(n)});populateSources();requestHistory();}
-function requestHistory(){if(!selectedSource||!socket||socket.readyState!==WebSocket.OPEN)return;const dev=state.inverters[selectedSource]?.wsName||selectedSource;socket.send(JSON.stringify({type:'get_daily_data',unit_id:currentPlant,device:dev,date:today()}));}
-function connect(){
- clearTimeout(reconnectTimer);
- try{socket=new WebSocket(WS_URL)}catch(e){reconnectTimer=setTimeout(connect,2500);return}
- socket.onopen=()=>{document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse';socket.send(JSON.stringify({type:'subscribe',unit_id:currentPlant}));socket.send(JSON.stringify({type:'get_devices',unit_id:currentPlant}));requestHistory()};
- socket.onmessage=e=>{try{
-   const m=JSON.parse(e.data),unit=m.unit_id||m.request?.unit_id||m.unitId||m.request?.unitId||'';if(unit&&unit!==currentPlant)return;
-   if(m.type==='daily_data_result'){
-      const latest=Array.isArray(m.data)&&m.data.length?m.data[m.data.length-1]:null;
-      if(latest&&latest.values)applyReading(m.deviceName||m.device||latest.device||'',latest.values,latest.time||latest.timestamp||latest.ts||m.time||m.timestamp||'');
-   }
-   rowsFromMessage(m).forEach(r=>applyReading(r.device,r.values,r.time));
-   if(m.type==='device_list')handleDeviceList(m.devices||[]);
-   if(m.type==='daily_data_result'&&Array.isArray(m.data))m.data.forEach(r=>{const dev=r.device||r.deviceName||m.deviceName||m.device||'';if(isInverter(dev))applyReading(dev,r.values||r,r.time||r.timestamp||r.ts||m.time||m.timestamp||'')});
-   populateSources();renderSnapshot();renderTrend();
- }catch(err){}};
- socket.onclose=()=>{document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-red-500 rounded-full';reconnectTimer=setTimeout(connect,2500)};
- socket.onerror=()=>{};
-}
-function exportExcel(){
- if(!selectedSource)return;const raw=Array.from(state.history[selectedSource]?.values()||[]).sort((a,b)=>a.timestamp-b.timestamp);if(!raw.length){alert('No WebSocket history available yet.');return}
- const rows=raw.map(r=>({Date:today(new Date(r.timestamp)),Time:new Date(r.timestamp).toLocaleTimeString('en-IN',{hour12:false}),Plant:PLANTS[currentPlant]?.name||currentPlant,Inverter:inverterLabel(selectedSource),'Output (kW)':Number(Number(r.power).toFixed(3)),'Daily Energy (kWh)':r.daily??'','Output Source':r.source||'WebSocket','Sample Timestamp':new Date(r.timestamp).toLocaleString('en-IN')}));
- const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Live Trend');XLSX.writeFile(wb,currentPlant+'_'+selectedSource+'_'+today()+'_analytics.xlsx');
-}
-document.getElementById('analyticsSourceSelect').addEventListener('change',()=>{selectedSource=document.getElementById('analyticsSourceSelect').value;requestHistory();renderTrend()});
-document.getElementById('downloadExcel').addEventListener('click',exportExcel);
-document.getElementById('plantSwitcher').addEventListener('change',e=>{const p=e.target.value;const u=new URL(window.location.href);u.searchParams.set('plant',p);window.location.href=u.toString()});
-fetch('sidebar.html',{cache:'no-store'}).then(r=>r.text()).then(html=>{document.getElementById('sidebar-container').innerHTML=html;document.querySelectorAll('#sidebarNav a').forEach(a=>{let h=a.getAttribute('href');if(h&&!h.includes('logout')){const u=new URL(h,location.href);u.searchParams.set('plant',currentPlant);const t=new URLSearchParams(location.search).get('token');if(t)u.searchParams.set('token',t);a.href=u.pathname+u.search}});document.getElementById('sidebarPlantName')?.replaceChildren(document.createTextNode(PLANTS[currentPlant]?.name||currentPlant));if(typeof initSidebar==='function')initSidebar();const sidebar=document.getElementById('sidebar'),overlay=document.getElementById('overlay');document.getElementById('menuBtn')?.addEventListener('click',()=>{sidebar?.classList.remove('-translate-x-full');overlay?.classList.remove('hidden')});document.getElementById('closeSidebarBtn')?.addEventListener('click',()=>{sidebar?.classList.add('-translate-x-full');overlay?.classList.add('hidden')});overlay?.addEventListener('click',()=>{sidebar?.classList.add('-translate-x-full');overlay?.classList.add('hidden')})});
-const ctx=document.getElementById('outputTrendChart').getContext('2d');
-chart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[{label:'Output (kW)',data:[],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',pointRadius:2,pointHoverRadius:5,borderWidth:2.5,tension:.28,fill:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#64748b',autoSkip:true,maxTicksLimit:14,maxRotation:0},title:{display:true,text:'Time'}},y:{beginAtZero:true,grid:{color:'#e2e8f0'},title:{display:true,text:'Output (kW)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Output: '+Number(c.parsed.y||0).toFixed(2)+' kW'}}}}});
-seedConfigured();renderSnapshot();renderTrend();connect();
-setInterval(renderSnapshot,5000);
-</script>
-</body></html>,'i').test(key));
+  const vk=Object.keys(values||{}).find(key=>new RegExp('^string\\s*'+n+'\\s*volt(age)?$','i').test(key));
   directStrings.push({n,curr,volt:vk?num(values[vk]):null,active:curr>0.5});
  }
  if(directStrings.length)return {active:directStrings.filter(x=>x.active).length,total:directStrings.length};
 
  const grouped={};
  for(const [k,v] of Object.entries(values||{})){
-  const m=k.match(/(\\d+)/); if(!m)continue;
-  const key=m[1];
-  const text=k.toLowerCase();
+  const m=k.match(/(\d+)/);if(!m)continue;
+  const key=m[1],text=k.toLowerCase();
   if(/phase|freq|temperature|temp|power factor|cosphi|reactive|active power|dc power/i.test(text))continue;
-  if(/current|amp|\\bi\\b/.test(text)){grouped[key]=grouped[key]||{};grouped[key].curr=num(v);}
+  if(/current|amp|\bi\b/.test(text)){
+   grouped[key]=grouped[key]||{};
+   grouped[key].curr=num(v);
+  }
  }
  const items=Object.values(grouped).filter(x=>x.curr!==null&&x.curr!==undefined);
  return {active:items.filter(x=>x.curr>0.5).length,total:items.length};
