@@ -116,11 +116,7 @@ function fetchLiveData($plant) {
         return ['error' => 'WS connect failed'];
     }
     $ws->sendText(json_encode(['type' => 'subscribe', 'unit_id' => $plant]));
-    if ($plant !== 'vinoba-velliyanai') {
-        $ws->sendText(json_encode(['type' => 'subscribe', 'unit_id' => 'vinoba-velliyanai']));
-    }
-
-    $frames = []; $start = time();
+$frames = []; $start = time();
     while (time() - $start < 6) {
         $frame = $ws->readFrame();
         if ($frame && isset($frame['payload']) && $frame['opcode'] === 'text') {
@@ -137,6 +133,7 @@ function fetchLiveData($plant) {
         $task = strtolower($f['task'] ?? '');
         $dev = strtolower($f['device'] ?? '');
         $v = $f['values'] ?? [];
+        if (!is_array($v) && isset($f['data']) && is_array($f['data'])) $v = $f['data'];
         if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || strpos($dev, 'pyranometer') !== false || strpos($dev, 'pannel') !== false || strpos($dev, 'ambient') !== false || strpos($dev, 'wind') !== false || strpos($dev, 'humidity') !== false) {
             foreach ($v as $vk => $vv) {
                 $vkl = strtolower($vk);
@@ -318,13 +315,10 @@ if ($type === 'daily') {
     $wmsPlantClause = $plantClause;
     $wmsRows = [];
     
-    // Try weather_readings first
+    // Try weather_readings first; never fall back to another plant.
     try {
         $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
-        if (!$wmsRes || $wmsRes->num_rows === 0) {
-            $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM weather_readings WHERE DATE(recorded_at)='$date' AND plant_id='vinoba-velliyanai' ORDER BY recorded_at ASC");
-        }
-        if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
+if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
     } catch (Exception $e) {
         // Fallback with basic columns if table doesn't have all columns yet
         try {
@@ -333,14 +327,11 @@ if ($type === 'daily') {
         } catch (Exception $e2) {}
     }
 
-    // Try wms_readings if weather_readings was empty
+    // Try wms_readings only when this plant has no weather_readings.
     if (empty($wmsRows)) {
         try {
             $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM wms_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
-            if (!$wmsRes || $wmsRes->num_rows === 0) {
-                $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM wms_readings WHERE DATE(recorded_at)='$date' AND plant_id='vinoba-velliyanai' ORDER BY recorded_at ASC");
-            }
-            if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
+if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
         } catch (Exception $e3) {}
     }
 
@@ -428,22 +419,14 @@ if ($type === 'daily') {
     try {
         $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM weather_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
         $wmsRes = $conn->query($wmsQuery);
-        if (!$wmsRes || $wmsRes->num_rows === 0) {
-            $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM weather_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' AND plant_id='vinoba-velliyanai' GROUP BY DATE(recorded_at)";
-            $wmsRes = $conn->query($wmsQuery);
-        }
-        if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
+if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
     } catch (Exception $e) {}
 
     if (empty($wmsMonthly)) {
         try {
             $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM wms_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
             $wmsRes = $conn->query($wmsQuery);
-            if (!$wmsRes || $wmsRes->num_rows === 0) {
-                $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM wms_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' AND plant_id='vinoba-velliyanai' GROUP BY DATE(recorded_at)";
-                $wmsRes = $conn->query($wmsQuery);
-            }
-            if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
+if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
         } catch (Exception $e2) {}
     }
 
