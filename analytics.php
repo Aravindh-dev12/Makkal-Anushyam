@@ -178,7 +178,9 @@ function ensureInverter(device){
 }
 function num(v){if(v===null||v===undefined||v==='')return null; if(typeof v==='object'){for(const k of ['value','val','reading','data','result'])if(k in v){const n=num(v[k]);if(n!==null)return n}return null} const n=parseFloat(String(v).replace(/,/g,''));return Number.isFinite(n)?n:null;}
 function direct(values,keys){for(const k of keys){if(Object.prototype.hasOwnProperty.call(values||{},k)){const n=num(values[k]);if(n!==null)return n}}return null;}
+function preferredDirect(values,keys){let fallback=null;for(const k of keys){if(!Object.prototype.hasOwnProperty.call(values||{},k))continue;const n=num(values[k]);if(n===null)continue;if(fallback===null)fallback=n;if(Math.abs(n)>0.000001)return n}return fallback;}
 function metric(values,accept,reject=[]){for(const [k,v] of Object.entries(values||{})){const s=k.toLowerCase().replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();if(reject.some(r=>r.test(s))||!accept.some(r=>r.test(s)))continue;const n=num(v);if(n!==null)return n}return null;}
+function preferredMetric(values,accept,reject=[]){let fallback=null;for(const [k,v] of Object.entries(values||{})){const s=k.toLowerCase().replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();if(reject.some(r=>r.test(s))||!accept.some(r=>r.test(s)))continue;const n=num(v);if(n===null)continue;if(fallback===null)fallback=n;if(Math.abs(n)>0.000001)return n}return fallback;}
 function pf(v){if(v===null)return null;let n=Math.abs(v);if(n>1.2&&n<=100)n/=100;return n<=1?n:null;}
 function stringStats(values){
  const directStrings=[];
@@ -226,7 +228,7 @@ function powerKw(v){
  return abs>10000 ? n/1000 : n;
 }
 function outputFrom(values){
- const directRaw=direct(values,['Total active power','a.c. active power','AC Power','active_power','power_kw','ac_active_power']);
+ const directRaw=preferredDirect(values,['Total active power','a.c. active power','AC Power','active_power','power_kw','ac_active_power']);
  const directKw=powerKw(directRaw);
  const va=metric(values,[/ry.*volt/,/v12/,/voltage.*ab/,/vac.*ab/],[/dc|string|temp/]);
  const vb=metric(values,[/yb.*volt/,/v23/,/voltage.*bc/,/vac.*bc/],[/dc|string|temp/]);
@@ -240,8 +242,8 @@ function outputFrom(values){
  let power=null,source='';
  if(directKw!==null){power=Math.max(0,directKw);source='Direct AC power'}
  else if(calc!==null){power=Math.max(0,calc);source='Calculated V × I × PF'}
- const daily=direct(values,['Daily power yields','daily generation','daily_generation','Day Energy','today_energy','daily_gen_kwh']) ?? metric(values,[/daily.*yield/,/daily.*gen/,/today.*energy/,/day.*energy/]);
- const total=direct(values,['Total power yields precise','Total power yields','total_generation','total energy']) ?? metric(values,[/total.*power.*yield/,/total.*gen/]);
+ const daily=preferredDirect(values,['Daily power yields','daily generation','daily_generation','Day Energy','today_energy','daily_gen_kwh']) ?? preferredMetric(values,[/daily.*yield/,/daily.*gen/,/today.*energy/,/day.*energy/]);
+ const total=preferredDirect(values,['Total power yields precise','Total power yields','total_generation','total energy']) ?? preferredMetric(values,[/total.*power.*yield/,/total.*gen/]);
  const reactive=direct(values,['Total reactive power','reactive_power','ac_reactive_power']) ?? metric(values,[/total.*reactive.*power/,/reactive.*power/]);
  const eff=direct(values,['Efficiency','efficiency','inverter_efficiency']) ?? metric(values,[/efficiency/]);
  const st=readStatus(values);
@@ -257,10 +259,19 @@ function timestamp(raw){
  const d=new Date(s);return isNaN(d)?new Date():d;
 }
 function today(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function resolveDeviceName(msg,row={}){
+ const candidates=[row.device,row.deviceName,row.inverter,row.inv,row.task,msg.device,msg.deviceName,msg.inverter,msg.inv,msg.task];
+ for(const candidate of candidates){
+  const name=normalizeName(candidate);if(!name)continue;
+  if(isInverter(name))return name;
+  if(/^(?:inverter|inv)(?:[-\\s_]*\\d+)?$/i.test(name))return name;
+ }
+ return normalizeName(row.device||row.deviceName||msg.device||msg.deviceName||'');
+}
 function rowsFromMessage(msg){
- const out=[],base=msg.device||msg.deviceName||'';
- if(msg.values&&typeof msg.values==='object')out.push({device:base,values:msg.values,time:msg.time||msg.timestamp||msg.ts||''});
- if(Array.isArray(msg.data))msg.data.forEach(r=>{if(!r||typeof r!=='object')return;out.push({device:r.device||r.deviceName||base,values:r.values&&typeof r.values==='object'?r.values:r,time:r.time||r.timestamp||r.ts||msg.time||msg.timestamp||''})});
+ const out=[];
+ if(msg.values&&typeof msg.values==='object')out.push({device:resolveDeviceName(msg,msg),values:msg.values,time:msg.time||msg.timestamp||msg.ts||''});
+ if(Array.isArray(msg.data))msg.data.forEach(r=>{if(!r||typeof r!=='object')return;out.push({device:resolveDeviceName(msg,r),values:r.values&&typeof r.values==='object'?r.values:r,time:r.time||r.timestamp||r.ts||msg.time||msg.timestamp||''})});
  return out;
 }
 function applyReading(device,values,sourceTime){
@@ -270,7 +281,8 @@ function applyReading(device,values,sourceTime){
  if(x.daily!==null)st.dailyGen=x.daily;
  if(x.va!==null)st.voltage=x.va;
  if(x.freq!==null)st.freq=x.freq;
- st.online=(st.power>GENERATION_THRESHOLD_KW)&&!/offline|fault|stop|standby|disconnect/i.test(x.work);
+ const freshEnough=st.lastUpdate>0&&(Date.now()-st.lastUpdate)<=90000;
+ st.online=freshEnough&&(st.power>GENERATION_THRESHOLD_KW)&&!/offline|fault|stop|standby|disconnect/i.test(x.work);
  st.lastUpdate=d.getTime();
  if(today(d)===today()&&x.power!==null)state.history[key].set(d.getTime(),{timestamp:d.getTime(),power:x.power,source:x.source,daily:x.daily,values});
  return x.power!==null||x.daily!==null;
@@ -294,7 +306,8 @@ function renderSnapshot(){
  document.getElementById('avail_val').innerHTML=((online/Math.max(names.length,Number(cfg.inverter_count)||names.length))*100).toFixed(1)+' <span class="text-sm font-bold text-emerald-600">%</span>';
  document.getElementById('inv_active_count').textContent=online+' / '+names.length+' online';
  document.getElementById('perf_val').innerHTML=((total/cap)*100).toFixed(1)+' <span class="text-sm font-bold text-amber-600">%</span>';
- document.getElementById('snapshotStatus').textContent='Live · '+new Date().toLocaleTimeString('en-IN',{hour12:false});
+ const connected=socket&&socket.readyState===WebSocket.OPEN;
+ document.getElementById('snapshotStatus').textContent=(connected?'Live':'Reconnecting')+' · '+new Date().toLocaleTimeString('en-IN',{hour12:false});
 }
 function displayedRows(){
  if(!selectedSource)return [];
@@ -320,7 +333,7 @@ function renderTrend(){
  chart.data.datasets[0].data=rows.map(r=>Number(Number(r.power).toFixed(2)));
  chart.update('none');
 }
-function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(d=>{const n=d.name||d.device||'';if(isInverter(n))ensureInverter(n)});populateSources();requestHistory();}
+function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(d=>{const n=typeof d==='string'?d:(d.name||d.device||d.deviceName||d.id||'');if(isInverter(n))ensureInverter(n)});populateSources();requestHistory();}
 function requestHistory(){if(!selectedSource||!socket||socket.readyState!==WebSocket.OPEN)return;const dev=state.inverters[selectedSource]?.wsName||selectedSource;socket.send(JSON.stringify({type:'get_daily_data',unit_id:currentPlant,device:dev,date:today()}));}
 function connect(){
  clearTimeout(reconnectTimer);
@@ -330,7 +343,7 @@ function connect(){
    const m=JSON.parse(e.data),unit=m.unit_id||m.request?.unit_id||m.unitId||m.request?.unitId||'';if(unit&&unit!==currentPlant)return;
    rowsFromMessage(m).forEach(r=>applyReading(r.device,r.values,r.time));
    if(m.type==='device_list')handleDeviceList(m.devices||[]);
-   if(m.type==='daily_data_result'&&Array.isArray(m.data))m.data.forEach(r=>{const dev=r.device||r.deviceName||m.device||'';if(isInverter(dev))applyReading(dev,r.values||r,r.time||r.timestamp||r.ts||'')});
+   if(m.type==='daily_data_result'&&Array.isArray(m.data))m.data.forEach(r=>{const dev=resolveDeviceName(m,r);if(isInverter(dev))applyReading(dev,r.values||r,r.time||r.timestamp||r.ts||m.time||m.timestamp||'')});
    populateSources();renderSnapshot();renderTrend();
  }catch(err){}};
  socket.onclose=()=>{document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-red-500 rounded-full';reconnectTimer=setTimeout(connect,2500)};
