@@ -587,7 +587,7 @@
                     // WEATHER & WMOS HANDLING
                     const taskStr = d.task ? d.task.toString().toLowerCase() : '';
                     const deviceStr = d.device ? d.device.toString().toLowerCase() : '';
-                    const isWeather = taskStr === 'wmos' || taskStr === 'weather' ||
+                    const isWeather = taskStr === 'wmos' || taskStr === 'wmas' || taskStr === 'weather' ||
                         deviceStr.includes('ambient') || deviceStr.includes('pannel') || deviceStr.includes('panel') ||
                         deviceStr.includes('pyran') || deviceStr.includes('wind') || deviceStr.includes('humid');
 
