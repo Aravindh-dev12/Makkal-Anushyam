@@ -259,6 +259,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
         let selectedInverter = '';
         let selectedWmas = '';
+        let liveWmasUnitId = '';
         let analyticsSocket = null;
         let analyticsWmosSocket = null;
         let lastInverterOptionsKey = '';
@@ -547,6 +548,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const baseDevice = message.device || message.deviceName || (/^inverter$/i.test(String(message.task || message.pageName || '')) ? 'Inverter' : '');
             const weatherContext = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(messageTask) + ' ' + String(baseDevice));
             if (messageUnit && messageUnit !== wsUnitId && !weatherContext) return;
+            if (weatherContext && messageUnit) liveWmasUnitId = messageUnit;
             const defaultTime = message.time || message.timestamp || message.ts || '';
             let updated = false;
 
@@ -604,7 +606,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function requestSelectedWmosToday() {
             const source = WMOS_EXPORT_SOURCES[wmasSelect?.value || ''];
             if (!source || !analyticsSocket || analyticsSocket.readyState !== WebSocket.OPEN) return;
-            analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
+            analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: liveWmasUnitId || COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
         function renderWmasLiveStatus() {
@@ -734,7 +736,15 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             return rows;
         }
         function requestSelectedInverterToday(){if(!selectedInverter||!analyticsSocket||analyticsSocket.readyState!==WebSocket.OPEN)return;const deviceName=aState.inverters[selectedInverter]?.wsName||selectedInverter;analyticsSocket.send(JSON.stringify({type:'get_daily_data',unit_id:wsUnitId,device:deviceName,date:todayKey()}));}
-        function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(device=>{const name=(device.name||device.device||'').toString();if(isInverterDeviceName(name))ensureInverter(name);});populateAnalyticsInverterOptions();requestSelectedInverterToday();}
+        function handleDeviceList(devices){
+            if(!Array.isArray(devices)) return;
+            devices.forEach(device => {
+                const name = (typeof device === 'string' ? device : (device?.name || device?.device || device?.deviceName || '')).toString().trim();
+                if (isInverterDeviceName(name)) ensureInverter(name);
+            });
+            populateAnalyticsInverterOptions();
+            requestSelectedInverterToday();
+        }
 
         function connectWSAnalytics(){
             const wsUrl=(cfg.ws_url || "wss://vinobasolar.scadahub.in:5001"); if(!wsUrl)return; const ws=new WebSocket(wsUrl); analyticsSocket=ws;
@@ -754,7 +764,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     const messageUnitId=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';
                     window.LiveWsStore?.storeMessage?.(message,currentPlant);
                     if(message.type==='device_list'){
-                        handleDeviceList(message.devices||[]);
+                        handleDeviceList(message.devices || message.data || []);
                         return;
                     }
                     if(messageUnitId&&messageUnitId!==wsUnitId)return;
