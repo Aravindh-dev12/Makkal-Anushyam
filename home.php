@@ -639,10 +639,7 @@
                             const aNum = parseFloat(rawAmbientTemp);
                             const atempEl = document.getElementById('wmos_atemp');
                             if (atempEl) atempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : rawAmbientTemp;
-                            const ptempEl = document.getElementById('wmos_ptemp');
-                            if (ptempEl && ptempEl.dataset.isLivePanel !== "true") {
-                                ptempEl.textContent = !isNaN(aNum) ? aNum.toFixed(1) : rawAmbientTemp;
-                            }
+                            // Ambient temperature is kept separate; never copy it into Panel Temperature.
                         }
 
                         // Wind Speed
