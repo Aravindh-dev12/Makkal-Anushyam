@@ -610,7 +610,13 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
 
         function renderWmasLiveStatus() {
-            const age = aState.weather.lastReceivedAt ? Date.now() - aState.weather.lastReceivedAt : Infinity;
+            const sourceKey = wmasSelect?.value || '';
+            const latestSource = sourceKey
+                ? Array.from(analyticsWmosHistory[sourceKey]?.values() || []).sort((a,b) => b.timestamp - a.timestamp)[0]
+                : null;
+            const age = latestSource
+                ? Date.now() - Number(latestSource.timestamp)
+                : (aState.weather.lastReceivedAt ? Date.now() - aState.weather.lastReceivedAt : Infinity);
             if (!wmasGraphLiveDot || !wmasGraphStatus) return;
             if (age <= 5000) {
                 wmasGraphLiveDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
