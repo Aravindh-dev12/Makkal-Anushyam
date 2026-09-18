@@ -532,27 +532,73 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 label.textContent = 'Waiting for live telemetry';
             }
         }
+        function analyticsMessageUnitId(message = {}) {
+            return String(
+                message.unit_id ||
+                message.request?.unit_id ||
+                message.unitId ||
+                message.request?.unitId ||
+                ''
+            ).trim();
+        }
+
         function captureAnalyticsWmosMessage(message) {
             if (!message || typeof message !== 'object') return;
+            const messageUnit = analyticsMessageUnitId(message);
+            // Some weather frames have no unit_id; those are accepted because this
+            // WebSocket is subscribed only to the selected plant.
+            if (messageUnit && messageUnit !== wsUnitId) return;
+
             const messageTask = message.task || message.pageName || message.type || '';
             const baseDevice = message.device || message.deviceName || '';
+            const defaultTime = message.time || message.timestamp || message.ts || '';
             let updated = false;
 
-            if (message.values && typeof message.values === 'object') {
-                updated = captureWmosValues(message.values, message.time || message.timestamp || message.ts || '', baseDevice, messageTask) || updated;
-            }
+            const consume = (values, device, task, time) => {
+                if (!values || typeof values !== 'object' || Array.isArray(values)) return;
+                updated = captureWmosValues(values, time || defaultTime, device || baseDevice, task || messageTask) || updated;
+            };
 
-            if (Array.isArray(message.data)) {
-                message.data.forEach(row => {
+            // Direct values payload.
+            consume(message.values, baseDevice, messageTask, defaultTime);
+
+            // Data can be a single object or an array of device rows.
+            const data = message.data;
+            const rows = Array.isArray(data) ? data : (data && typeof data === 'object' ? [data] : []);
+            rows.forEach(row => {
+                if (!row || typeof row !== 'object') return;
+                const rowUnit = analyticsMessageUnitId(row);
+                if (rowUnit && rowUnit !== wsUnitId) return;
+                const device = row.device || row.deviceName || row.sensor || row.name || baseDevice;
+                const task = row.task || row.pageName || row.type || messageTask;
+                const time = row.time || row.timestamp || row.ts || row.recorded_at || defaultTime;
+                const values = row.values && typeof row.values === 'object'
+                    ? row.values
+                    : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+                        ? row.data
+                        : row;
+                consume(values, device, task, time);
+            });
+
+            // A few gateway payloads wrap readings in payload/result.
+            for (const containerKey of ['payload', 'result']) {
+                const container = message[containerKey];
+                if (!container || typeof container !== 'object' || Array.isArray(container)) continue;
+                const nestedRows = Array.isArray(container.data) ? container.data : (container.data && typeof container.data === 'object' ? [container.data] : []);
+                consume(container.values, container.device || container.deviceName || baseDevice, container.task || container.pageName || messageTask, container.time || container.timestamp || defaultTime);
+                nestedRows.forEach(row => {
                     if (!row || typeof row !== 'object') return;
-                    const device = row.device || row.deviceName || baseDevice;
-                    const task = row.task || row.pageName || messageTask;
+                    const rowUnit = analyticsMessageUnitId(row);
+                    if (rowUnit && rowUnit !== wsUnitId) return;
+                    const device = row.device || row.deviceName || row.sensor || row.name || container.device || baseDevice;
+                    const task = row.task || row.pageName || row.type || container.task || messageTask;
+                    const time = row.time || row.timestamp || row.ts || row.recorded_at || container.time || container.timestamp || defaultTime;
                     const values = row.values && typeof row.values === 'object'
                         ? row.values
-                        : row.data && typeof row.data === 'object'
+                        : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
                             ? row.data
                             : row;
-                    updated = captureWmosValues(values, row.time || row.timestamp || row.ts || message.time || message.timestamp || '', device, task) || updated;
+                    consume(values, device, task, time);
                 });
             }
 
@@ -592,7 +638,30 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
         function dbInverterValues(row){return{'Total active power':row.power_kw,'Power factor':row.power_factor,'RY voltage':row.vac_ab,'YB voltage':row.vac_bc,'BR voltage':row.vac_ca,'RY current':row.current_a,'YB current':row.current_b,'BR current':row.current_c,'Daily power yields':row.daily_gen_kwh,'Work state':row.work_state||row.status_text||''};}
         function loadLatestSnapshot(){if(!window.LiveWsStore?.fastSnapshot)return;window.LiveWsStore.fastSnapshot(currentPlant).then(res=>res.json()).then(res=>{if(res.status!=='success'||!res.data)return;(res.data.inverters||[]).forEach(row=>applyInverterReading(row.inverter_name,dbInverterValues(row),row.snapshot_at||''));populateAnalyticsInverterOptions();updateAnalyticsCards();renderOutputTrend();}).catch(()=>{});}
-        function normalizeWsRows(message){const rows=[],baseDevice=message.device||message.deviceName||message.task||'';if(message.values&&typeof message.values==='object')rows.push({device:baseDevice,values:message.values,time:message.time||message.timestamp||message.ts||''});if(Array.isArray(message.data))message.data.forEach(row=>{if(!row||typeof row!=='object')return;const rowDevice=row.device||row.deviceName||baseDevice,values=row.values&&typeof row.values==='object'?row.values:row;rows.push({device:rowDevice,values,time:row.time||row.timestamp||row.ts||message.time||message.timestamp||''});});return rows;}
+        function normalizeWsRows(message){
+            const rows = [];
+            const baseDevice = message.device || message.deviceName || '';
+            const baseTime = message.time || message.timestamp || message.ts || '';
+            if (message.values && typeof message.values === 'object' && !Array.isArray(message.values)) {
+                rows.push({device:baseDevice,values:message.values,time:baseTime});
+            }
+            const data = message.data;
+            const rawRows = Array.isArray(data) ? data : (data && typeof data === 'object' ? [data] : []);
+            rawRows.forEach(row => {
+                if (!row || typeof row !== 'object') return;
+                const values = row.values && typeof row.values === 'object' && !Array.isArray(row.values)
+                    ? row.values
+                    : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+                        ? row.data
+                        : row;
+                rows.push({
+                    device: row.device || row.deviceName || baseDevice,
+                    values,
+                    time: row.time || row.timestamp || row.ts || row.recorded_at || baseTime
+                });
+            });
+            return rows;
+        }
         function requestSelectedInverterToday(){if(!selectedInverter||!analyticsSocket||analyticsSocket.readyState!==WebSocket.OPEN)return;const deviceName=aState.inverters[selectedInverter]?.wsName||selectedInverter;analyticsSocket.send(JSON.stringify({type:'get_daily_data',unit_id:wsUnitId,device:deviceName,date:todayKey()}));}
         function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(device=>{const name=(device.name||device.device||'').toString();if(isInverterDeviceName(name))ensureInverter(name);});populateAnalyticsInverterOptions();requestSelectedInverterToday();}
 
@@ -600,8 +669,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const wsUrl=(cfg.ws_url || "wss://vinobasolar.scadahub.in:5001"); if(!wsUrl)return; const ws=new WebSocket(wsUrl); analyticsSocket=ws;
              ws.onopen=function(){
                 document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]';
+                // Subscribe only to the selected plant. Never mix telemetry from another plant.
                 ws.send(JSON.stringify({type:'subscribe',unit_id:wsUnitId}));
-                if(wsUnitId!=='vinoba-velliyanai') ws.send(JSON.stringify({type:'subscribe',unit_id:'vinoba-velliyanai'}));
                 ws.send(JSON.stringify({type:'get_devices',unit_id:wsUnitId}));
                 requestSelectedInverterToday();
             };
@@ -694,7 +763,21 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         inverterSelect?.addEventListener('change',()=>{selectedInverter=inverterSelect.value;renderOutputTrend();if(!WMOS_EXPORT_SOURCES[selectedInverter])requestSelectedInverterToday();});
         exportButton?.addEventListener('click',exportSelectedInverterExcel);generateExcelButton?.addEventListener('click',generateSelectedAnalyticsExcel);
 
-        initOutputTrendChart();seedConfiguredInverters();renderOutputTrend();loadLatestSnapshot();connectWSAnalytics();connectWSAnalyticsWmos();
+        initOutputTrendChart();
+        seedConfiguredInverters();
+        renderOutputTrend();
+        loadLatestSnapshot();
+        connectWSAnalytics();
+        connectWSAnalyticsWmos();
+
+        // Refresh the visible Analytics values every second from the latest live
+        // WebSocket readings already stored in memory. This never generates or
+        // estimates telemetry when the gateway has not delivered a new sample.
+        setInterval(() => {
+            updateAnalyticsCards();
+            renderOutputTrend();
+            updateWmosLiveStatus();
+        }, 1000);
     </script>
 </body>
 </html>
