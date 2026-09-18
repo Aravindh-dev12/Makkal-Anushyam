@@ -665,7 +665,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
         function updateAnalyticsCards() {
             const inverterRows = Object.values(aState.inverters);
-            const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0);
+            const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0 && (Date.now() - Number(row.lastSeen)) <= 5000);
             const perfEl = document.getElementById('perf_val');
             const yieldEl = document.getElementById('yield_val');
             const availEl = document.getElementById('avail_val');
@@ -673,13 +673,6 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 perfEl.innerHTML = '-- <span class="text-sm font-bold text-blue-600">%</span>';
                 yieldEl.innerHTML = '-- <span class="text-sm font-bold text-purple-600">kWh</span>';
                 availEl.innerHTML = '-- <span class="text-sm font-bold text-emerald-600">%</span>';
-                return;
-            }
-            const liveRows = inverterRows.filter(row => Number(row.lastSeen) > 0 && (Date.now() - Number(row.lastSeen)) <= 5000);
-            if (!liveRows.length) {
-                document.getElementById('perf_val').innerHTML = '-- <span class="text-sm font-bold text-blue-600">%</span>';
-                document.getElementById('yield_val').innerHTML = '-- <span class="text-sm font-bold text-purple-600">kWh</span>';
-                document.getElementById('avail_val').innerHTML = '-- <span class="text-sm font-bold text-emerald-600">%</span>';
                 return;
             }
             const totalInv = liveRows.length;
@@ -708,7 +701,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function renderOutputTrend() {
             const rows=displayedOutputRows(),hasSelection=!!selectedInverter,hasGeneration=rows.length>0; emptyState.classList.toggle('hidden',hasSelection&&hasGeneration);
             if(!hasSelection)emptyState.textContent='Select an inverter to load today’s output trend.';else if(!hasGeneration)emptyState.textContent='Waiting for this inverter to start generating output today.';
-            exportButton.disabled=!hasSelection||!hasGeneration; if(!WMOS_EXPORT_SOURCES[inverterSelect?.value||''])generateExcelButton.disabled=!hasSelection;
+            exportButton.disabled=!hasSelection||!hasGeneration;
+            if (!selectedInverter && !selectedWmas) generateExcelButton.disabled = true;
             outputTrendTitle.textContent=hasSelection?`${inverterLabel(selectedInverter)} Output`:'Inverter Output'; const latest=hasGeneration?rows[rows.length-1]:null; analyticsLiveLabel.textContent=latest?new Date(latest.timestamp).toLocaleTimeString('en-IN',{hour12:false}):'--'; latestOutputValue.textContent=latest?Number(latest.outputKw).toFixed(2):'--';
             if(!outputTrendChart)return; outputTrendChart.data.labels=rows.map(row=>new Date(row.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})); outputTrendChart.data.datasets[0].data=rows.map(row=>Number(Number(row.outputKw).toFixed(2))); outputTrendChart.update('none');
         }
