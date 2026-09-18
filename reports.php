@@ -205,7 +205,10 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         const token = new URLSearchParams(window.location.search).get('token') || sessionStorage.getItem('vs_token') || '';
         const dateInput = document.getElementById('dateSelect');
         const monthInput = document.getElementById('monthSelect');
-        dateInput.value = new Date().toISOString().split('T')[0];
+        function localDateKey(d = new Date()) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        dateInput.value = localDateKey();
         monthInput.value = new Date().toISOString().slice(0, 7);
 
         function loadSidebar() {
@@ -356,7 +359,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             if (updated) {
                 liveWeather.lastAt = Date.now();
                 if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' &&
-                    dateInput.value === new Date().toISOString().split('T')[0]) {
+                    dateInput.value === localDateKey()) {
                     renderWmasLiveRow();
                 }
             }
@@ -585,6 +588,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 <th class="bg-sky-50 text-sky-800" style="min-width:130px;">Wind Speed<br><span class="text-[9px] font-normal">(m/s)</span></th>
                 <th class="bg-blue-50 text-blue-800" style="min-width:130px;">Humidity<br><span class="text-[9px] font-normal">(%)</span></th>
             </tr>`;
+            document.querySelector('.report-table').style.width = '760px';
             document.querySelector('.report-table').style.minWidth = '760px';
         }
 
@@ -702,7 +706,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             if (currentReportSection === 'wmas') {
                 lastReportData = null;
                 weatherBuckets = {};
-                if (type === 'daily' && selectedDate === new Date().toISOString().split('T')[0]) {
+                if (type === 'daily' && selectedDate === localDateKey()) {
                     connectReportWS();
                     if (!requestWmasDailyHistory()) setTimeout(requestWmasDailyHistory, 800);
                 } else {
