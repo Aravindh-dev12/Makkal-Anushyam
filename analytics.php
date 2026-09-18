@@ -2,364 +2,478 @@
 require 'check_auth.php';
 date_default_timezone_set('Asia/Kolkata');
 
-$plantConfigs = [];
+$analyticsWsUrl = 'wss://vinobasolar.scadahub.in:5001';
+$analyticsPlantConfig = [
+    'vinoba-velliyanai' => [
+        'name' => 'Vinoba Velliyanai',
+        'capacity' => 2.0,
+        'location' => 'Karur',
+        'inverter_count' => 8,
+        'ws_unit_id' => 'vinoba-velliyanai',
+        'ws_url' => $analyticsWsUrl,
+    ],
+    'makkalpower' => [
+        'name' => 'Makkal Power',
+        'capacity' => 2.0,
+        'location' => 'Karur',
+        'inverter_count' => 8,
+        'ws_unit_id' => 'makkalpower',
+        'ws_url' => $analyticsWsUrl,
+    ],
+    'anushyam' => [
+        'name' => 'Anushyam Plant',
+        'capacity' => 2.0,
+        'location' => 'Karur',
+        'inverter_count' => 8,
+        'ws_unit_id' => 'anushyam',
+        'ws_url' => $analyticsWsUrl,
+    ],
+];
+
+/* Prefer DB plant capacity/counts when the tables are available. */
 try {
     if (isset($conn) && $conn instanceof mysqli) {
-        $plantResult = $conn->query("SELECT id, name, capacity, location FROM plants ORDER BY name ASC");
-        if ($plantResult) {
-            while ($plantRow = $plantResult->fetch_assoc()) {
-                $plantId = trim((string)($plantRow['id'] ?? ''));
-                if ($plantId === '') continue;
-                $capacity = (float)($plantRow['capacity'] ?? 0);
-                if ($capacity <= 0) $capacity = 2.0;
-
-                $inverterCount = 0;
-                $safePlantId = $conn->real_escape_string($plantId);
-                $countResult = $conn->query(
-                    "SELECT COUNT(DISTINCT device_name) AS inverter_count
-                     FROM inverter_readings
-                     WHERE plant_id = '$safePlantId'
-                       AND device_name <> ''
-                       AND (LOWER(device_name) LIKE '%inverter%' OR LOWER(device_name) LIKE '%inv%')"
-                );
-                if ($countResult) {
-                    $countRow = $countResult->fetch_assoc();
-                    $inverterCount = (int)($countRow['inverter_count'] ?? 0);
-                }
-
-                $plantConfigs[$plantId] = [
-                    'name' => (string)($plantRow['name'] ?? $plantId),
-                    'capacity' => $capacity,
-                    'location' => (string)($plantRow['location'] ?? ''),
-                    'inverter_count' => max($inverterCount, 8),
-                ];
+        $plantRes = @$conn->query("SELECT id, name, capacity, location FROM plants");
+        if ($plantRes) {
+            while ($row = $plantRes->fetch_assoc()) {
+                $id = trim((string)($row['id'] ?? ''));
+                if ($id === '' || !isset($analyticsPlantConfig[$id])) continue;
+                $name = trim((string)($row['name'] ?? ''));
+                $capacity = (float)($row['capacity'] ?? 0);
+                if ($name !== '') $analyticsPlantConfig[$id]['name'] = $name;
+                if ($capacity > 0) $analyticsPlantConfig[$id]['capacity'] = $capacity;
+                if (isset($row['location'])) $analyticsPlantConfig[$id]['location'] = (string)$row['location'];
             }
         }
     }
 } catch (Throwable $e) {
-    $plantConfigs = [];
+    /* Static defaults above remain valid. */
 }
 
-if (!$plantConfigs) {
-    $plantConfigs = [
-        'vinoba-velliyanai' => ['name' => 'Vinoba Velliyanai', 'capacity' => 2.0, 'location' => 'Veliyanai, Karur', 'inverter_count' => 8],
-        'makkalpower'       => ['name' => 'Makkal Power',       'capacity' => 2.0, 'location' => 'Veliyanai, Karur', 'inverter_count' => 8],
-        'anushyam'          => ['name' => 'Anushyam Plant',     'capacity' => 2.0, 'location' => 'Veliyanai, Karur', 'inverter_count' => 8],
-    ];
-}
-
-if (!isset($plantConfigs[$currentPlant])) {
-    $currentPlant = array_key_first($plantConfigs);
-}
-
-$visiblePlantConfigs = $plantConfigs;
-if (($user['role'] ?? '') !== 'admin' && !empty($user['plant_id']) && isset($plantConfigs[$user['plant_id']])) {
-    $visiblePlantConfigs = [$user['plant_id'] => $plantConfigs[$user['plant_id']]];
-    $currentPlant = $user['plant_id'];
+if (!isset($analyticsPlantConfig[$currentPlant])) {
+    $currentPlant = array_key_first($analyticsPlantConfig);
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="pageTitle">Plant Analytics</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<script src="sidebar-control.js?v=4" defer></script>
-<style>
-::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:#f8fafc}
-::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}::-webkit-scrollbar-thumb:hover{background:#94a3b8}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="assets/app.css?v=20260802-1">
+    <title id="pageTitle">Solar Plant - Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-800 font-sans">
-<div class="min-h-screen flex relative">
-<div id="overlay" class="fixed inset-0 bg-slate-900/40 hidden z-30 md:hidden"></div>
-<div id="sidebar-container"></div>
-<main class="flex-1 flex flex-col w-full md:ml-64 overflow-x-hidden">
-<header class="bg-white p-4 sm:px-6 flex justify-between items-center sticky top-0 z-20 border-b border-slate-200 shadow-sm">
-<div class="flex items-center gap-3 min-w-0">
-<button id="menuBtn" class="md:hidden text-emerald-600 text-2xl">&#9776;</button>
-<div class="min-w-0"><h2 class="text-xl font-black text-slate-800 tracking-tight truncate">Plant Analytics</h2>
-<p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live inverter output & today trend</p></div>
-</div>
-<div class="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
-<div id="refreshPulse" class="w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
-<span id="clockDisplay" class="text-xs font-bold text-slate-600 tracking-widest hidden sm:inline">--:--:--</span>
-</div>
-</header>
+<body class="h-full bg-slate-50 text-slate-800 font-sans">
+    <div class="min-h-screen flex relative">
+        <div id="overlay" class="fixed inset-0 bg-slate-900 bg-opacity-40 hidden z-30 md:hidden transition-opacity"></div>
+        <div id="sidebar-container"></div>
+        <main class="flex-1 flex flex-col w-full md:ml-64 overflow-x-hidden">
+            <header class="bg-white p-4 sm:px-6 flex justify-between items-center sticky top-0 z-20 border-b border-slate-200 shadow-sm">
+                <div class="flex items-center gap-3 min-w-0">
+                    <button id="menuBtn" class="md:hidden text-emerald-600 text-2xl focus:outline-none shrink-0">&#9776;</button>
+                    <div class="min-w-0">
+                        <h2 class="text-xl font-black text-slate-800 tracking-tight truncate">Plant Analytics</h2>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live inverter output</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 shrink-0">
+                    <div id="refreshPulse" class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                    <span class="text-xs font-bold text-slate-600 tracking-widest hidden sm:inline" id="clockDisplay">--:--:--</span>
+                </div>
+            </header>
 
-<div class="p-4 sm:p-6 lg:p-8 w-full flex flex-col gap-6 lg:gap-8 max-w-[1920px] mx-auto">
-<div class="grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-<h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Live Power</h3>
-<p id="comb_power" class="font-black text-slate-800 text-3xl">-- <span class="text-sm font-bold text-blue-600">kW</span></p>
-<p class="text-xs text-slate-500 mt-1">Combined inverter AC output</p></div>
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-<h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Today Yield</h3>
-<p id="yield_val" class="font-black text-slate-800 text-3xl">-- <span class="text-sm font-bold text-purple-600">kWh</span></p>
-<p class="text-xs text-slate-500 mt-1">Latest cumulative inverter energy</p></div>
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-<h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Availability</h3>
-<p id="avail_val" class="font-black text-slate-800 text-3xl">-- <span class="text-sm font-bold text-emerald-600">%</span></p>
-<p id="inv_active_count" class="text-xs text-slate-500 mt-1">0 / 0 online</p></div>
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-<h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Capacity Factor</h3>
-<p id="perf_val" class="font-black text-slate-800 text-3xl">-- <span class="text-sm font-bold text-amber-600">%</span></p>
-<p id="capacityLabel" class="text-xs text-slate-500 mt-1">2.0 MWp</p></div>
-</div>
+            <div class="p-4 sm:p-6 lg:p-8 w-full flex flex-col gap-6 lg:gap-8 max-w-[1920px] mx-auto">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden group hover:shadow-md transition duration-300">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-blue-50 rounded-full blur-xl -z-10 group-hover:bg-blue-100 transition"></div>
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Performance</h3>
+                        <p class="font-black text-slate-800 text-3xl" id="perf_val">-- <span class="text-sm font-bold text-blue-600">%</span></p>
+                        <p class="text-xs text-slate-500 font-medium mt-1">Capacity factor</p>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden group hover:shadow-md transition duration-300">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-purple-50 rounded-full blur-xl -z-10 group-hover:bg-purple-100 transition"></div>
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Yield</h3>
+                        <p class="font-black text-slate-800 text-3xl" id="yield_val">-- <span class="text-sm font-bold text-purple-600">kWh</span></p>
+                        <p class="text-xs text-slate-500 font-medium mt-1">Daily energy</p>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden group hover:shadow-md transition duration-300">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-emerald-50 rounded-full blur-xl -z-10 group-hover:bg-emerald-100 transition"></div>
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Availability</h3>
+                        <p class="font-black text-slate-800 text-3xl" id="avail_val">-- <span class="text-sm font-bold text-emerald-600">%</span></p>
+                        <p class="text-xs text-slate-500 font-medium mt-1">Inverter uptime</p>
+                    </div>
+                </div>
 
-<section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
-<div class="flex flex-col lg:flex-row lg:items-end gap-4 mb-5">
-<div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Plant / Live source</p>
-<h2 id="trendHeading" class="text-xl font-bold text-slate-900">Output Trend</h2>
-<p id="trendHelp" class="mt-1 text-xs text-slate-500">Live WebSocket samples are retained for today's selected source.</p></div>
-<div class="ml-auto flex flex-wrap items-end justify-end gap-2">
-<label class="text-xs font-semibold text-slate-500 min-w-[190px]"><span class="block mb-1">Plant</span>
-<select id="plantSwitcher" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50">
-<?php foreach ($visiblePlantConfigs as $id=>$cfg): ?>
-<option value="<?php echo htmlspecialchars($id); ?>"><?php echo htmlspecialchars($cfg['name']); ?></option>
-<?php endforeach; ?>
-</select></label>
-<label class="text-xs font-semibold text-slate-500 min-w-[190px]"><span class="block mb-1">Data Source</span>
-<select id="analyticsSourceSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50"><option value="">Select Inverter</option></select></label>
-<button id="downloadExcel" type="button" disabled class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40"><i class="fa-solid fa-file-excel"></i> Excel</button>
-</div></div>
+                <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+                    <div class="flex flex-col sm:flex-row sm:items-end gap-4 mb-5">
+                        <div class="min-w-0">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Today Data</p>
+                            <h2 class="text-xl font-bold text-slate-900">Output Trend</h2>
+                            <p class="mt-1 text-xs text-slate-500">Chart keeps the existing live trend · Excel exports the full selected source from first sample to last sample.</p>
+                        </div>
+                        <div class="ml-auto flex flex-wrap items-end justify-end gap-2 w-full sm:w-auto">
+                            <button id="generateAnalyticsExcel" type="button" disabled class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                                <i class="fa-solid fa-file-excel"></i>
+                                <span>Generate Excel</span>
+                            </button>
+                            <button id="exportAnalyticsExcel" type="button" disabled class="hidden inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                                <i class="fa-solid fa-file-excel"></i>
+                                <span>Export Excel</span>
+                            </button>
+                            <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
+                                <span class="block mb-1 text-right">Inverter / WMOS</span>
+                                <select id="analyticsInverterSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Select Inverter</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
 
-<div id="emptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 mb-4">Waiting for live inverter telemetry...</div>
-<div class="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
-<div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-<div><h3 id="outputTrendTitle" class="text-sm font-black text-slate-700">Inverter Output</h3>
-<p id="outputTrendDescription" class="text-[11px] text-slate-400">Direct AC power; V × I × PF is used only when direct power is unavailable.</p></div>
-<div class="text-right"><p id="latestLabel" class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Latest Output</p>
-<p class="text-lg font-black text-blue-700"><span id="latestOutputValue">--</span> <span id="latestUnit" class="text-xs">kW</span></p>
-<p class="text-[10px] text-slate-400">Live through <span id="analyticsLiveLabel">--</span></p></div>
-</div>
-<div class="h-[340px] sm:h-[410px]"><canvas id="outputTrendChart"></canvas></div>
-</div>
-</section>
+                    <div id="analyticsEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 mb-4">
+                        Select an inverter to load today’s output trend.
+                    </div>
 
-<section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-<div class="flex flex-wrap items-center justify-between gap-2 mb-4"><h3 class="text-sm font-black text-slate-600 uppercase tracking-widest">Live Inverter Snapshot</h3>
-<span id="snapshotStatus" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">Waiting</span></div>
-<div class="overflow-x-auto"><table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-600 uppercase tracking-wider">
-<th class="p-3">Inverter</th><th class="p-3 text-right">Power kW</th><th class="p-3 text-right">Today kWh</th><th class="p-3 text-center">Strings</th><th class="p-3 text-right">Voltage V</th><th class="p-3 text-right">Frequency Hz</th><th class="p-3 text-center">Status</th><th class="p-3 text-right">Last Update</th>
-</tr></thead><tbody id="snapshotBody" class="divide-y divide-slate-100 text-xs"></tbody></table></div>
-</section>
-</div></main></div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div>
+                                <h3 class="text-sm font-black text-slate-700" id="outputTrendTitle">Inverter Output</h3>
+                                <p class="text-[11px] text-slate-400">Direct AC power, with V × I × PF fallback only when direct power is unavailable.</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Latest Output</p>
+                                <p class="text-lg font-black text-blue-700"><span id="latestOutputValue">--</span> <span class="text-xs">kW</span></p>
+                                <p class="text-[10px] text-slate-400">Live through <span id="analyticsLiveLabel">--</span></p>
+                            </div>
+                        </div>
+                        <div class="h-[340px] sm:h-[400px]"><canvas id="outputTrendChart"></canvas></div>
+                    </div>
+                </section>
 
-<script>
-const PLANTS = <?php echo json_encode($plantConfigs, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE); ?>;
-let currentPlant = <?php echo json_encode($currentPlant); ?>;
-const WS_URL = 'wss://vinobasolar.scadahub.in:5001';
-let socket = null, reconnectTimer = null, selectedSource = '', chart = null;
-const state = { inverters:{}, history:{} };
-const GENERATION_THRESHOLD_KW = 0.1;
-const SOURCE_LABELS = {};
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                        <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest">Alerts & Recommendations</h3>
+                        <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 shrink-0" id="recBadge">0 items</span>
+                    </div>
+                    <div id="recContainer" class="space-y-3">
+                        <div class="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                            <p class="font-black text-slate-800 text-sm">No Alerts</p>
+                            <p class="mt-2 text-sm text-slate-600">All systems operating within normal parameters. No action required.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 
-document.getElementById('plantSwitcher').value = currentPlant;
-document.getElementById('pageTitle').textContent = (PLANTS[currentPlant]?.name || currentPlant) + ' - Analytics';
-document.getElementById('capacityLabel').textContent = ((PLANTS[currentPlant]?.capacity || 2) + ' MWp');
-setInterval(()=>document.getElementById('clockDisplay').textContent=new Date().toLocaleTimeString('en-IN',{hour12:false}),1000);
+    <script>
+        const currentPlant = '<?php echo addslashes($currentPlant); ?>';
+        const wsUnitId = <?php echo json_encode($currentPlant); ?>;
+        const plantConfig = <?php echo json_encode($analyticsPlantConfig, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE); ?>;
+        const plantNames = Object.fromEntries(Object.entries(plantConfig).map(([id, cfg]) => [id, cfg.name]));
+        const cfg = plantConfig[currentPlant] || { capacity: 1.0, inverter_count: 0 };
+        const COMMON_WMOS_UNIT_ID = 'via-3mw';
+        const commonWmosConfig = Object.values(plantConfig).find(item => String(item?.ws_unit_id || '') === COMMON_WMOS_UNIT_ID) || cfg;
+        const COMMON_WMOS_WS_URL = commonWmosConfig.ws_url || '';
+        const TREND_START_MINUTE = 6 * 60;
+        const TREND_END_MINUTE = 19 * 60;
+        const TREND_BUCKET_MINUTES = 5;
+        const GENERATION_THRESHOLD_KW = 0.1;
 
-function normalizeName(v){return String(v||'').trim().replace(/\\s+/g,' ');}
-function inverterKey(v){const m=normalizeName(v).match(/(?:inv(?:erter)?)[-\\s_]*(\\d+)/i)||normalizeName(v).match(/\\b(\\d+)\\b/);return m?'Inverter'+parseInt(m[1],10):normalizeName(v);}
-function isInverter(v){const s=normalizeName(v).toLowerCase();return s && /inverter|(^|[^a-z])inv([^a-z]|$)/.test(s) && !/vcb|transformer|trafo/.test(s);}
-function inverterLabel(k){const m=String(k).match(/\\d+/);return m?'Inverter '+parseInt(m[0],10):k;}
-function ensureInverter(device){
- const key=inverterKey(device);
- if(!state.inverters[key]) state.inverters[key]={wsName:normalizeName(device)||key,power:0,dailyGen:0,activeStrings:0,totalStrings:0,voltage:0,freq:0,lastUpdate:0,online:false,workState:'',statusText:'',fault:false,alarm:false};
- if(normalizeName(device)) state.inverters[key].wsName=normalizeName(device);
- if(!state.history[key]) state.history[key]=new Map();
- SOURCE_LABELS[key]=inverterLabel(key);
- return key;
-}
-function num(v){if(v===null||v===undefined||v==='')return null; if(typeof v==='object'){for(const k of ['value','val','reading','data','result'])if(k in v){const n=num(v[k]);if(n!==null)return n}return null} const n=parseFloat(String(v).replace(/,/g,''));return Number.isFinite(n)?n:null;}
-function direct(values,keys){for(const k of keys){if(Object.prototype.hasOwnProperty.call(values||{},k)){const n=num(values[k]);if(n!==null)return n}}return null;}
-function preferredDirect(values,keys){let fallback=null;for(const k of keys){if(!Object.prototype.hasOwnProperty.call(values||{},k))continue;const n=num(values[k]);if(n===null)continue;if(fallback===null)fallback=n;if(Math.abs(n)>0.000001)return n}return fallback;}
-function metric(values,accept,reject=[]){for(const [k,v] of Object.entries(values||{})){const s=k.toLowerCase().replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();if(reject.some(r=>r.test(s))||!accept.some(r=>r.test(s)))continue;const n=num(v);if(n!==null)return n}return null;}
-function preferredMetric(values,accept,reject=[]){let fallback=null;for(const [k,v] of Object.entries(values||{})){const s=k.toLowerCase().replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();if(reject.some(r=>r.test(s))||!accept.some(r=>r.test(s)))continue;const n=num(v);if(n===null)continue;if(fallback===null)fallback=n;if(Math.abs(n)>0.000001)return n}return fallback;}
-function pf(v){if(v===null)return null;let n=Math.abs(v);if(n>1.2&&n<=100)n/=100;return n<=1?n:null;}
-function stringStats(values){
- const directStrings=[];
- for(const [k,v] of Object.entries(values||{})){
-  const m=k.match(/^string\s*(\d+)\s*current$/i);
-  if(!m)continue;
-  const n=parseInt(m[1],10),curr=num(v);
-  if(curr===null)continue;
-  const vk=Object.keys(values||{}).find(key=>new RegExp('^string\\s*'+n+'\\s*volt(age)?$','i').test(key));
-  directStrings.push({n,curr,volt:vk?num(values[vk]):null,active:curr>0.5});
- }
- if(directStrings.length)return {active:directStrings.filter(x=>x.active).length,total:directStrings.length};
+        document.getElementById('pageTitle').textContent = (plantNames[currentPlant] || currentPlant) + ' - Analytics';
+        setInterval(() => {
+            document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-IN', { hour12: false });
+        }, 1000);
 
- const grouped={};
- for(const [k,v] of Object.entries(values||{})){
-  const m=k.match(/(\d+)/);if(!m)continue;
-  const key=m[1],text=k.toLowerCase();
-  if(/phase|freq|temperature|temp|power factor|cosphi|reactive|active power|dc power/i.test(text))continue;
-  if(/current|amp|\bi\b/.test(text)){
-   grouped[key]=grouped[key]||{};
-   grouped[key].curr=num(v);
-  }
- }
- const items=Object.values(grouped).filter(x=>x.curr!==null&&x.curr!==undefined);
- return {active:items.filter(x=>x.curr>0.5).length,total:items.length};
-}
-function readStatus(values){
- let work='',status='',fault=false,alarm=false;
- for(const [k,v] of Object.entries(values||{})){
-  const key=k.toLowerCase();
-  const text=String(v??'').trim();
-  const lower=text.toLowerCase();
-  const active=text!==''&&text!=='0'&&lower!=='normal'&&lower!=='false'&&lower!=='null';
-  if(/fault\\s*code|faultcode/i.test(k)&&active)fault=true;
-  if(/fault|trip|error/i.test(key)&&active)fault=true;
-  if(/alarm|warning|warn/i.test(key)&&active)alarm=true;
-  if(/work\\s*state/i.test(k))work=text;
-  else if(/status|state/i.test(key)&&text)status=text;
- }
- return {work,status,fault,alarm};
-}
-function powerKw(v){
- const n=num(v); if(n===null)return null;
- const abs=Math.abs(n);
- return abs>10000 ? n/1000 : n;
-}
-function outputFrom(values){
- const directRaw=preferredDirect(values,['Total active power','a.c. active power','AC Power','active_power','power_kw','ac_active_power']);
- const directKw=powerKw(directRaw);
- const va=metric(values,[/ry.*volt/,/v12/,/voltage.*ab/,/vac.*ab/],[/dc|string|temp/]);
- const vb=metric(values,[/yb.*volt/,/v23/,/voltage.*bc/,/vac.*bc/],[/dc|string|temp/]);
- const vc=metric(values,[/br.*volt/,/v31/,/voltage.*ca/,/vac.*ca/],[/dc|string|temp/]);
- const ia=metric(values,[/ry.*current/,/current.*a/,/a.*phase.*current/,/^i a$/],[/volt|string|mppt|dc/]);
- const ib=metric(values,[/yb.*current/,/current.*b/,/b.*phase.*current/,/^i b$/],[/volt|string|mppt|dc/]);
- const ic=metric(values,[/br.*current/,/current.*c/,/c.*phase.*current/,/^i c$/],[/volt|string|mppt|dc/]);
- const factor=pf(direct(values,['Power factor','power_factor','pf','power factor average']) ?? metric(values,[/power factor/,/^pf$/]));
- const av=[va,vb,vc].filter(v=>v!==null), ai=[ia,ib,ic].filter(v=>v!==null);
- const calc=av.length&&ai.length&&factor!==null ? Math.sqrt(3)*(av.reduce((a,b)=>a+b,0)/av.length)*(ai.reduce((a,b)=>a+b,0)/ai.length)*factor/1000 : null;
- let power=null,source='';
- if(directKw!==null){power=Math.max(0,directKw);source='Direct AC power'}
- else if(calc!==null){power=Math.max(0,calc);source='Calculated V × I × PF'}
- const daily=preferredDirect(values,['Daily power yields','daily generation','daily_generation','Day Energy','today_energy','daily_gen_kwh']) ?? preferredMetric(values,[/daily.*yield/,/daily.*gen/,/today.*energy/,/day.*energy/]);
- const total=preferredDirect(values,['Total power yields precise','Total power yields','total_generation','total energy']) ?? preferredMetric(values,[/total.*power.*yield/,/total.*gen/]);
- const reactive=direct(values,['Total reactive power','reactive_power','ac_reactive_power']) ?? metric(values,[/total.*reactive.*power/,/reactive.*power/]);
- const eff=direct(values,['Efficiency','efficiency','inverter_efficiency']) ?? metric(values,[/efficiency/]);
- const st=readStatus(values);
- const strings=stringStats(values);
- return {power,source,daily,total,reactive,pf:factor,eff,work:st.work,status:st.status,fault:st.fault,alarm:st.alarm,va:va??vb??vc,freq:metric(values,[/frequency/,/^freq/,/grid frequency/]),strings};
-}
-function timestamp(raw){
- const s=String(raw||'').trim(); if(!s)return new Date();
- if(/[zZ]$|[+-]\\d{2}:?\\d{2}$/.test(s)){const d=new Date(s);if(!isNaN(d))return d}
- const f=s.match(/(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
- if(f)return new Date(+f[1],+f[2]-1,+f[3],+f[4],+f[5],+(f[6]||0));
- const t=s.match(/\\b(\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);if(t){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate(),+t[1],+t[2],+(t[3]||0))}
- const d=new Date(s);return isNaN(d)?new Date():d;
-}
-function today(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function resolveDeviceName(msg,row={}){
- const candidates=[row.device,row.deviceName,row.inverter,row.inv,row.task,msg.device,msg.deviceName,msg.inverter,msg.inv,msg.task];
- for(const candidate of candidates){
-  const name=normalizeName(candidate);if(!name)continue;
-  if(isInverter(name))return name;
-  if(/^(?:inverter|inv)(?:[-\\s_]*\\d+)?$/i.test(name))return name;
- }
- return normalizeName(row.device||row.deviceName||msg.device||msg.deviceName||'');
-}
-function rowsFromMessage(msg){
- const out=[];
- if(msg.values&&typeof msg.values==='object')out.push({device:resolveDeviceName(msg,msg),values:msg.values,time:msg.time||msg.timestamp||msg.ts||''});
- if(Array.isArray(msg.data))msg.data.forEach(r=>{if(!r||typeof r!=='object')return;out.push({device:resolveDeviceName(msg,r),values:r.values&&typeof r.values==='object'?r.values:r,time:r.time||r.timestamp||r.ts||msg.time||msg.timestamp||''})});
- return out;
-}
-function applyReading(device,values,sourceTime){
- if(!isInverter(device)||!values)return false;
- const key=ensureInverter(device), x=outputFrom(values), d=timestamp(sourceTime), st=state.inverters[key];
- if(x.power!==null)st.power=x.power;
- if(x.daily!==null)st.dailyGen=x.daily;
- if(x.va!==null)st.voltage=x.va;
- if(x.freq!==null)st.freq=x.freq;
- const freshEnough=st.lastUpdate>0&&(Date.now()-st.lastUpdate)<=90000;
- st.online=freshEnough&&(st.power>GENERATION_THRESHOLD_KW)&&!/offline|fault|stop|standby|disconnect/i.test(x.work);
- st.lastUpdate=d.getTime();
- if(today(d)===today()&&x.power!==null)state.history[key].set(d.getTime(),{timestamp:d.getTime(),power:x.power,source:x.source,daily:x.daily,values});
- return x.power!==null||x.daily!==null;
-}
-function seedConfigured(){const n=Math.max(0,parseInt(PLANTS[currentPlant]?.inverter_count||0,10));for(let i=1;i<=n;i++)ensureInverter('Inverter'+i);populateSources();}
-function populateSources(){
- const sel=document.getElementById('analyticsSourceSelect'),current=selectedSource||sel.value||'';
- const names=Object.keys(state.inverters).sort((a,b)=>(parseInt(a.match(/\\d+/)?.[0]||0)-parseInt(b.match(/\\d+/)?.[0]||0))||a.localeCompare(b));
- sel.innerHTML='<option value="">Select Inverter</option>'+names.map(k=>'<option value="'+k+'">'+inverterLabel(k)+'</option>').join('');
- sel.value=names.includes(current)?current:'';
- if(sel.value!==selectedSource){selectedSource=sel.value;renderTrend();}
-}
-function renderSnapshot(){
- const body=document.getElementById('snapshotBody'),names=Object.keys(state.inverters).sort((a,b)=>parseInt(a.match(/\\d+/)?.[0]||0)-parseInt(b.match(/\\d+/)?.[0]||0));
- if(!names.length){body.innerHTML='<tr><td colspan="8" class="p-8 text-center text-slate-400">No inverter telemetry received.</td></tr>';return}
- let total=0,energy=0,online=0;
- body.innerHTML=names.map(k=>{const s=state.inverters[k];total+=Number(s.power)||0;energy+=Number(s.dailyGen)||0;if(s.online)online++;return '<tr><td class="p-3 font-bold">'+inverterLabel(k)+'</td><td class="p-3 text-right font-mono font-bold text-blue-600">'+(Number(s.power)||0).toFixed(2)+'</td><td class="p-3 text-right font-mono text-purple-600">'+(Number(s.dailyGen)||0).toFixed(2)+'</td><td class="p-3 text-center">'+(s.activeStrings||'--')+' / '+(s.totalStrings||'--')+'</td><td class="p-3 text-right">'+(Number(s.voltage)||0).toFixed(1)+'</td><td class="p-3 text-right">'+(Number(s.freq)||0).toFixed(2)+'</td><td class="p-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-black '+(s.online?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500')+'">'+(s.online?'ACTIVE':'STANDBY')+'</span></td><td class="p-3 text-right text-slate-500">'+(s.lastUpdate?new Date(s.lastUpdate).toLocaleTimeString('en-IN',{hour12:false}):'--')+'</td></tr>'}).join('');
- const cfg=PLANTS[currentPlant]||{capacity:2,inverter_count:names.length},cap=(Number(cfg.capacity)||2)*1000;
- document.getElementById('comb_power').innerHTML=total.toFixed(2)+' <span class="text-sm font-bold text-blue-600">kW</span>';
- document.getElementById('yield_val').innerHTML=energy.toFixed(2)+' <span class="text-sm font-bold text-purple-600">kWh</span>';
- document.getElementById('avail_val').innerHTML=((online/Math.max(names.length,Number(cfg.inverter_count)||names.length))*100).toFixed(1)+' <span class="text-sm font-bold text-emerald-600">%</span>';
- document.getElementById('inv_active_count').textContent=online+' / '+names.length+' online';
- document.getElementById('perf_val').innerHTML=((total/cap)*100).toFixed(1)+' <span class="text-sm font-bold text-amber-600">%</span>';
- const connected=socket&&socket.readyState===WebSocket.OPEN;
- document.getElementById('snapshotStatus').textContent=(connected?'Live':'Reconnecting')+' · '+new Date().toLocaleTimeString('en-IN',{hour12:false});
-}
-function displayedRows(){
- if(!selectedSource)return [];
- const raw=Array.from(state.history[selectedSource]?.values()||[]).filter(r=>today(new Date(r.timestamp))===today()).sort((a,b)=>a.timestamp-b.timestamp);
- const first=raw.findIndex(r=>Number(r.power)>GENERATION_THRESHOLD_KW);
- const rows=first>=0?raw.slice(first):raw;
- const bucket=new Map();rows.forEach(r=>bucket.set(Math.floor(r.timestamp/300000),r));
- const shown=Array.from(bucket.values()).sort((a,b)=>a.timestamp-b.timestamp);
- if(rows.length&&(!shown.length||shown[shown.length-1].timestamp!==rows[rows.length-1].timestamp))shown.push(rows[rows.length-1]);
- return shown;
-}
-function renderTrend(){
- const has=!!selectedSource,rows=displayedRows(),gen=rows.length>0;
- document.getElementById('emptyState').textContent=has?(gen?'':'Waiting for this inverter to start generating output today.'):'Select an inverter to load today’s output trend.';
- document.getElementById('emptyState').classList.toggle('hidden',has&&gen);
- document.getElementById('downloadExcel').disabled=!has||!gen;
- document.getElementById('outputTrendTitle').textContent=has?inverterLabel(selectedSource)+' Output':'Inverter Output';
- const latest=rows[rows.length-1];
- document.getElementById('latestOutputValue').textContent=latest?Number(latest.power).toFixed(2):'--';
- document.getElementById('analyticsLiveLabel').textContent=latest?new Date(latest.timestamp).toLocaleTimeString('en-IN',{hour12:false}):'--';
- if(!chart)return;
- chart.data.labels=rows.map(r=>new Date(r.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}));
- chart.data.datasets[0].data=rows.map(r=>Number(Number(r.power).toFixed(2)));
- chart.update('none');
-}
-function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(d=>{const n=typeof d==='string'?d:(d.name||d.device||d.deviceName||d.id||'');if(isInverter(n))ensureInverter(n)});populateSources();requestHistory();}
-function requestHistory(){if(!selectedSource||!socket||socket.readyState!==WebSocket.OPEN)return;const dev=state.inverters[selectedSource]?.wsName||selectedSource;socket.send(JSON.stringify({type:'get_daily_data',unit_id:currentPlant,device:dev,date:today()}));}
-function connect(){
- clearTimeout(reconnectTimer);
- try{socket=new WebSocket(WS_URL)}catch(e){reconnectTimer=setTimeout(connect,2500);return}
- socket.onopen=()=>{document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse';socket.send(JSON.stringify({type:'subscribe',unit_id:currentPlant}));socket.send(JSON.stringify({type:'get_devices',unit_id:currentPlant}));requestHistory()};
- socket.onmessage=e=>{try{
-   const m=JSON.parse(e.data),unit=m.unit_id||m.request?.unit_id||m.unitId||m.request?.unitId||'';if(unit&&unit!==currentPlant)return;
-   rowsFromMessage(m).forEach(r=>applyReading(r.device,r.values,r.time));
-   if(m.type==='device_list')handleDeviceList(m.devices||[]);
-   if(m.type==='daily_data_result'&&Array.isArray(m.data))m.data.forEach(r=>{const dev=resolveDeviceName(m,r);if(isInverter(dev))applyReading(dev,r.values||r,r.time||r.timestamp||r.ts||m.time||m.timestamp||'')});
-   populateSources();renderSnapshot();renderTrend();
- }catch(err){}};
- socket.onclose=()=>{document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-red-500 rounded-full';reconnectTimer=setTimeout(connect,2500)};
- socket.onerror=()=>{};
-}
-function exportExcel(){
- if(!selectedSource)return;const raw=Array.from(state.history[selectedSource]?.values()||[]).sort((a,b)=>a.timestamp-b.timestamp);if(!raw.length){alert('No WebSocket history available yet.');return}
- const rows=raw.map(r=>({Date:today(new Date(r.timestamp)),Time:new Date(r.timestamp).toLocaleTimeString('en-IN',{hour12:false}),Plant:PLANTS[currentPlant]?.name||currentPlant,Inverter:inverterLabel(selectedSource),'Output (kW)':Number(Number(r.power).toFixed(3)),'Daily Energy (kWh)':r.daily??'','Output Source':r.source||'WebSocket','Sample Timestamp':new Date(r.timestamp).toLocaleString('en-IN')}));
- const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Live Trend');XLSX.writeFile(wb,currentPlant+'_'+selectedSource+'_'+today()+'_analytics.xlsx');
-}
-document.getElementById('analyticsSourceSelect').addEventListener('change',()=>{selectedSource=document.getElementById('analyticsSourceSelect').value;requestHistory();renderTrend()});
-document.getElementById('downloadExcel').addEventListener('click',exportExcel);
-document.getElementById('plantSwitcher').addEventListener('change',e=>{const p=e.target.value;const u=new URL(window.location.href);u.searchParams.set('plant',p);window.location.href=u.toString()});
-fetch('sidebar.html',{cache:'no-store'}).then(r=>r.text()).then(html=>{document.getElementById('sidebar-container').innerHTML=html;document.querySelectorAll('#sidebarNav a').forEach(a=>{let h=a.getAttribute('href');if(h&&!h.includes('logout')){const u=new URL(h,location.href);u.searchParams.set('plant',currentPlant);const t=new URLSearchParams(location.search).get('token');if(t)u.searchParams.set('token',t);a.href=u.pathname+u.search}});document.getElementById('sidebarPlantName')?.replaceChildren(document.createTextNode(PLANTS[currentPlant]?.name||currentPlant));if(typeof initSidebar==='function')initSidebar();const sidebar=document.getElementById('sidebar'),overlay=document.getElementById('overlay');document.getElementById('menuBtn')?.addEventListener('click',()=>{sidebar?.classList.remove('-translate-x-full');overlay?.classList.remove('hidden')});document.getElementById('closeSidebarBtn')?.addEventListener('click',()=>{sidebar?.classList.add('-translate-x-full');overlay?.classList.add('hidden')});overlay?.addEventListener('click',()=>{sidebar?.classList.add('-translate-x-full');overlay?.classList.add('hidden')})});
-const ctx=document.getElementById('outputTrendChart').getContext('2d');
-chart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[{label:'Output (kW)',data:[],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',pointRadius:2,pointHoverRadius:5,borderWidth:2.5,tension:.28,fill:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#64748b',autoSkip:true,maxTicksLimit:14,maxRotation:0},title:{display:true,text:'Time'}},y:{beginAtZero:true,grid:{color:'#e2e8f0'},title:{display:true,text:'Output (kW)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Output: '+Number(c.parsed.y||0).toFixed(2)+' kW'}}}}});
-seedConfigured();renderSnapshot();renderTrend();connect();
-</script>
-</body></html>
+        fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
+            document.getElementById('sidebar-container').innerHTML = html;
+            document.getElementById('sidebar-container').querySelectorAll('script').forEach(s => {
+                const ns = document.createElement('script');
+                ns.textContent = s.textContent;
+                s.replaceWith(ns);
+            });
+            const overlay = document.getElementById('overlay');
+            const sidebar = document.getElementById('sidebar');
+            document.getElementById('menuBtn')?.addEventListener('click', () => {
+                sidebar?.classList.remove('-translate-x-full');
+                overlay?.classList.remove('hidden');
+            });
+            document.getElementById('closeSidebarBtn')?.addEventListener('click', () => {
+                sidebar?.classList.add('-translate-x-full');
+                overlay?.classList.add('hidden');
+            });
+            overlay?.addEventListener('click', () => {
+                sidebar?.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            });
+        });
+
+        let selectedInverter = '';
+        let analyticsSocket = null;
+        let analyticsWmosSocket = null;
+        let lastInverterOptionsKey = '';
+        let outputTrendChart = null;
+        const inverterSelect = document.getElementById('analyticsInverterSelect');
+        const analyticsLiveLabel = document.getElementById('analyticsLiveLabel');
+        const exportButton = document.getElementById('exportAnalyticsExcel');
+        const generateExcelButton = document.getElementById('generateAnalyticsExcel');
+        const emptyState = document.getElementById('analyticsEmptyState');
+        const latestOutputValue = document.getElementById('latestOutputValue');
+        const outputTrendTitle = document.getElementById('outputTrendTitle');
+
+        const aState = { inverters: {}, history: {} };
+        const analyticsRawInverterHistory = {};
+
+        const WMOS_EXPORT_SOURCES = {
+            'wmos:wind': { label: 'Wind Speed', device: 'Wind', unit: 'm/s', decimals: 2, keys: ['windspeed', 'wind speed'] },
+            'wmos:humidity': { label: 'Humidity', device: 'Humidity', unit: '%', decimals: 1, keys: ['humidity', 'relative humidity'] },
+            'wmos:ambient': { label: 'Ambient Temperature', device: 'Ambient Temperature', unit: '°C', decimals: 1, keys: ['ambient temperature'] },
+            'wmos:panel': { label: 'Panel Temperature', device: 'pannel temperature', unit: '°C', decimals: 1, keys: ['pannel temperature', 'panel temperature', 'module temperature'] },
+            'wmos:pyranometer': { label: 'Pyranometer', device: 'Pyranometer', unit: '', decimals: 0, keys: ['raw data'] }
+        };
+        const analyticsWmosHistory = Object.fromEntries(Object.keys(WMOS_EXPORT_SOURCES).map(key => [key, new Map()]));
+
+        function canonicalDeviceName(device) {
+            const name = (device || '').toString().trim();
+            const match = name.match(/(?:inv(?:erter)?)[-\s_]*(\d+)/i) || name.match(/\b(\d+)\b/);
+            if (match) return 'Inverter' + parseInt(match[1], 10);
+            return name || 'Inverter';
+        }
+        function inverterLabel(name) { const match = (name || '').toString().match(/\d+/); return match ? `Inverter ${parseInt(match[0], 10)}` : (name || 'Inverter'); }
+        function isInverterDeviceName(name) { const text = (name || '').toString().toLowerCase(); if (!text || /vcb|transformer|trafo|oil|winding/.test(text)) return false; return /(^|[^a-z])inv([^a-z]|$)|inverter/.test(text); }
+        function ensureInverter(device) {
+            const key = canonicalDeviceName(device);
+            if (!aState.inverters[key]) aState.inverters[key] = { wsName: (device || key).toString(), outputKw: 0, outputSource: '', dailyGen: 0, online: false, lastSeen: 0 };
+            const rawName = (device || '').toString().trim();
+            if (rawName && isInverterDeviceName(rawName)) aState.inverters[key].wsName = rawName;
+            if (!aState.history[key]) aState.history[key] = new Map();
+            if (!analyticsRawInverterHistory[key]) analyticsRawInverterHistory[key] = new Map();
+            return key;
+        }
+        function seedConfiguredInverters() { const count = Math.max(0, parseInt(cfg.inverter_count || 0, 10)); for (let i = 1; i <= count; i += 1) ensureInverter(`Inverter${i}`); populateAnalyticsInverterOptions(); }
+        function populateAnalyticsInverterOptions() {
+            if (!inverterSelect) return;
+            const current = inverterSelect.value || selectedInverter || '';
+            const names = Object.keys(aState.inverters).sort((a, b) => { const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10); const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10); return numA - numB || a.localeCompare(b); });
+            const optionsKey = names.join('|');
+            if (optionsKey === lastInverterOptionsKey) return;
+            lastInverterOptionsKey = optionsKey;
+            inverterSelect.innerHTML = ['<option value="">Select Inverter</option>', ...names.map(name => `<option value="${name}">${inverterLabel(name)}</option>`)].join('');
+            inverterSelect.value = names.includes(current) ? current : '';
+            selectedInverter = inverterSelect.value;
+        }
+
+        function readDirectNumber(values, keys) { for (const key of keys) { if (!Object.prototype.hasOwnProperty.call(values || {}, key)) continue; const raw = values[key]; if (raw === null || raw === undefined || raw === '') continue; const n = parseFloat(raw); if (Number.isFinite(n)) return n; } return null; }
+        function readRegexNumber(values, accepts, rejects = []) { for (const [key, raw] of Object.entries(values || {})) { const normalized = key.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); if (rejects.some(rx => rx.test(normalized)) || !accepts.some(rx => rx.test(normalized))) continue; const n = parseFloat(raw); if (Number.isFinite(n)) return n; } return null; }
+        function readMetric(values, keys, accepts = [], rejects = []) { const direct = readDirectNumber(values, keys); return direct !== null ? direct : (accepts.length ? readRegexNumber(values, accepts, rejects) : null); }
+        function metricCandidates(values, keys, accepts = [], rejects = []) {
+            const candidates = [], exactKeys = new Set(keys);
+            keys.forEach(key => { if (!Object.prototype.hasOwnProperty.call(values || {}, key)) return; const raw = values[key]; if (raw === null || raw === undefined || raw === '') return; const n = parseFloat(raw); if (Number.isFinite(n)) candidates.push(n); });
+            Object.entries(values || {}).forEach(([key, raw]) => { if (exactKeys.has(key) || raw === null || raw === undefined || raw === '') return; const normalized = key.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); if (rejects.some(rx => rx.test(normalized)) || !accepts.some(rx => rx.test(normalized))) return; const n = parseFloat(raw); if (Number.isFinite(n)) candidates.push(n); });
+            return candidates;
+        }
+        function preferredMetric(values, keys, accepts = [], rejects = []) { const candidates = metricCandidates(values, keys, accepts, rejects); const nonZero = candidates.find(value => Math.abs(value) > 0.000001); return nonZero !== undefined ? nonZero : (candidates.length ? candidates[0] : null); }
+        function averageAvailable(values) { const valid = values.filter(value => value !== null && value !== undefined && Number.isFinite(Number(value))); return valid.length ? valid.reduce((sum, value) => sum + Number(value), 0) / valid.length : null; }
+        function normalizePowerFactor(value) { if (value === null || value === undefined || !Number.isFinite(Number(value))) return null; let pf = Math.abs(Number(value)); if (pf > 1.2 && pf <= 100) pf /= 100; return Math.min(pf, 1); }
+
+        function extractOutput(values) {
+            const directPowerCandidates = metricCandidates(values, ['Total active power', 'a.c. active power', 'AC Power', 'active_power', 'power_kw'], [/active.*power/, /ac.*power/], [/reactive/, /apparent/, /nominal/, /rated/, /dc.*power/, /string/, /mppt/, /energy/, /yield/, /factor/, /phase/]);
+            const positiveDirectPower = directPowerCandidates.find(value => Number(value) > GENERATION_THRESHOLD_KW);
+            const dailyGen = readMetric(values, ['Daily power yields', 'daily generation', 'daily_generation', 'Day Energy', 'today_energy', 'daily_gen_kwh'], [/daily.*yield/, /daily.*gen/, /today.*energy/, /day.*energy/]);
+            const workState = (values?.['Work state'] ?? values?.work_state ?? values?.Status ?? values?.status ?? '').toString();
+            const vacAB = preferredMetric(values, ['RYvolatge', 'RY voltage', 'V12 (RY)', 'VAC A', 'Vac A', 'vac_ab'], [/ry.*volt/, /v12/, /voltage.*ab/, /vac.*ab/]);
+            const vacBC = preferredMetric(values, ['YB voltage', 'V23 (YB)', 'VAC B', 'Vac B', 'vac_bc'], [/yb.*volt/, /v23/, /voltage.*bc/, /vac.*bc/]);
+            const vacCA = preferredMetric(values, ['BR voltage', 'V31 (BR)', 'VAC C', 'Vac C', 'vac_ca'], [/br.*volt/, /v31/, /voltage.*ca/, /vac.*ca/]);
+            const currentA = preferredMetric(values, ['RY current', 'I A', 'Current A', 'current_a'], [/ry.*current/, /current.*a/, /a.*phase.*current/, /^i a$/], [/volt/]);
+            const currentB = preferredMetric(values, ['YB current', 'I B', 'Current B', 'current_b'], [/yb.*current/, /current.*b/, /b.*phase.*current/, /^i b$/], [/volt/]);
+            const currentC = preferredMetric(values, ['BR current', 'I C', 'Current C', 'current_c'], [/br.*current/, /current.*c/, /c.*phase.*current/, /^i c$/], [/volt/]);
+            const pf = normalizePowerFactor(preferredMetric(values, ['Power factor', 'power_factor', 'pf'], [/power factor/, /^pf$/]));
+            const avgVoltage = averageAvailable([vacAB, vacBC, vacCA]), avgCurrent = averageAvailable([currentA, currentB, currentC]);
+            const calculatedKw = avgVoltage !== null && avgVoltage > 0 && avgCurrent !== null && avgCurrent >= 0 && pf !== null ? (Math.sqrt(3) * avgVoltage * avgCurrent * pf) / 1000 : null;
+            if (positiveDirectPower !== undefined) return { outputKw: Math.max(0, positiveDirectPower), source: 'Direct AC power', dailyGen, workState };
+            if (calculatedKw !== null && calculatedKw > GENERATION_THRESHOLD_KW) return { outputKw: Math.max(0, calculatedKw), source: 'Calculated from V × I × PF', dailyGen, workState };
+            if (directPowerCandidates.length) return { outputKw: Math.max(0, ...directPowerCandidates), source: 'Direct AC power', dailyGen, workState };
+            if (calculatedKw !== null) return { outputKw: Math.max(0, calculatedKw), source: 'Calculated from V × I × PF', dailyGen, workState };
+            return { outputKw: null, source: '', dailyGen, workState };
+        }
+
+        function localDateKey(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
+        function todayKey() { return localDateKey(new Date()); }
+        function parseTelemetryTime(sourceTime) {
+            const raw = (sourceTime || '').toString().trim(); if (!raw) return new Date();
+            if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw)) { const zoned = new Date(raw); if (!Number.isNaN(zoned.getTime())) return zoned; }
+            const full = raw.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/); if (full) return new Date(parseInt(full[1],10),parseInt(full[2],10)-1,parseInt(full[3],10),parseInt(full[4],10),parseInt(full[5],10),parseInt(full[6]||'0',10));
+            const timeOnly = raw.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?/); if (timeOnly) { const now = new Date(); return new Date(now.getFullYear(),now.getMonth(),now.getDate(),parseInt(timeOnly[1],10),parseInt(timeOnly[2],10),parseInt(timeOnly[3]||'0',10)); }
+            const parsed = new Date(raw); return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+        }
+        function minuteOfDay(date) { return date.getHours() * 60 + date.getMinutes(); }
+        function cloneWsValues(values) { const cloned = {}; Object.entries(values || {}).forEach(([key, value]) => { cloned[key] = value && typeof value === 'object' ? JSON.stringify(value) : value; }); return cloned; }
+
+        function captureRawInverterReading(device, values, sourceTime) {
+            if (!values || typeof values !== 'object' || !isInverterDeviceName(device)) return false;
+            const key = ensureInverter(device), timestamp = parseTelemetryTime(sourceTime);
+            if (localDateKey(timestamp) !== todayKey()) return false;
+            const reading = extractOutput(values), timestampKey = timestamp.getTime();
+            analyticsRawInverterHistory[key].set(timestampKey, { timestamp: timestampKey, device: aState.inverters[key]?.wsName || device, outputKw: reading.outputKw, outputSource: reading.source, dailyGen: reading.dailyGen, workState: reading.workState, values: cloneWsValues(values) });
+            return true;
+        }
+
+        function applyInverterReading(device, values, sourceTime) {
+            if (!values || typeof values !== 'object') return false;
+            const key = ensureInverter(device), reading = extractOutput(values);
+            captureRawInverterReading(device, values, sourceTime);
+            if (reading.outputKw === null && reading.dailyGen === null) return false;
+            const timestamp = parseTelemetryTime(sourceTime), latest = aState.inverters[key];
+            if (reading.outputKw !== null) { latest.outputKw = reading.outputKw; latest.outputSource = reading.source; }
+            if (reading.dailyGen !== null) latest.dailyGen = reading.dailyGen;
+            latest.online = latest.outputKw > GENERATION_THRESHOLD_KW || !/offline|fault|stop|standby|disconnect/i.test(reading.workState || ''); latest.lastSeen = timestamp.getTime();
+            if (reading.outputKw !== null && localDateKey(timestamp) === todayKey()) aState.history[key].set(timestamp.getTime(), { timestamp: timestamp.getTime(), date: localDateKey(timestamp), time: timestamp.toLocaleTimeString('en-IN',{hour12:false}), outputKw: reading.outputKw, source: reading.source });
+            if (!lastInverterOptionsKey.includes(key)) populateAnalyticsInverterOptions(); return true;
+        }
+
+        function normalizeWmosMetricName(value) { return String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+        function unwrapWmosValue(value, depth = 0) { if (value === null || value === undefined || value === '' || depth > 3) return null; if (typeof value !== 'object') return value; for (const key of ['value','val','reading','data','result','current','last']) { if (!Object.prototype.hasOwnProperty.call(value,key)) continue; const next=unwrapWmosValue(value[key],depth+1); if (next!==null) return next; } return null; }
+        function wmosNumber(value) { const raw = unwrapWmosValue(value); if (raw === null || raw === undefined || raw === '') return null; const number = parseFloat(String(raw).replace(/,/g,'')); return Number.isFinite(number) ? number : null; }
+        function wmosSourceForDevice(device) { const name=normalizeWmosMetricName(device); if (/pyranometer|pyrimeter/.test(name)) return 'wmos:pyranometer'; if (/pannel.*temp|panel.*temp|module.*temp/.test(name)) return 'wmos:panel'; if (/ambient.*temp/.test(name)) return 'wmos:ambient'; if (/humidity/.test(name)) return 'wmos:humidity'; if (/^wind$|wind.*speed/.test(name)) return 'wmos:wind'; return ''; }
+
+        function captureWmosReading(sourceKey, values, sourceTime, device = '') {
+            const source = WMOS_EXPORT_SOURCES[sourceKey]; if (!source || !values || typeof values !== 'object') return false;
+            const wanted = source.keys.map(normalizeWmosMetricName); let value = null;
+            for (const [key, raw] of Object.entries(values)) { if (!wanted.includes(normalizeWmosMetricName(key))) continue; value = wmosNumber(raw); if (value !== null) break; }
+            if (value === null) return false;
+            const timestamp = parseTelemetryTime(sourceTime); if (localDateKey(timestamp) !== todayKey()) return false;
+            analyticsWmosHistory[sourceKey].set(timestamp.getTime(), { timestamp: timestamp.getTime(), value, device: device || source.device, values: cloneWsValues(values) });
+            if (inverterSelect?.value === sourceKey) generateExcelButton.disabled = false; return true;
+        }
+
+        function captureAnalyticsWmosMessage(message) {
+            if (!message || typeof message !== 'object') return;
+            const unit = message.unit_id || message.request?.unit_id || message.unitId || message.request?.unitId || '';
+            if (unit && unit !== COMMON_WMOS_UNIT_ID) return;
+            const baseDevice = message.device || message.deviceName || '';
+            if (message.values && typeof message.values === 'object') { const sourceKey = wmosSourceForDevice(baseDevice); if (sourceKey) captureWmosReading(sourceKey, message.values, message.time || message.timestamp || message.ts || '', baseDevice); }
+            if (Array.isArray(message.data)) message.data.forEach(row => { if (!row || typeof row !== 'object') return; const device = row.device || row.deviceName || baseDevice, sourceKey = wmosSourceForDevice(device); if (!sourceKey) return; const values = row.values && typeof row.values === 'object' ? row.values : row; captureWmosReading(sourceKey, values, row.time || row.timestamp || row.ts || message.time || message.timestamp || '', device); });
+        }
+
+        function requestSelectedWmosToday() {
+            const source = WMOS_EXPORT_SOURCES[inverterSelect?.value || ''];
+            if (!source || !analyticsWmosSocket || analyticsWmosSocket.readyState !== WebSocket.OPEN) return;
+            analyticsWmosSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
+        }
+
+        function updateAnalyticsCards() {
+            const inverterRows=Object.values(aState.inverters),totalInv=Math.max(parseInt(cfg.inverter_count||0,10),inverterRows.length),activeInv=inverterRows.filter(row=>row.online&&row.outputKw>GENERATION_THRESHOLD_KW).length,livePower=inverterRows.reduce((sum,row)=>sum+(Number(row.outputKw)||0),0),liveEnergy=inverterRows.reduce((sum,row)=>sum+(Number(row.dailyGen)||0),0),perf=Number(cfg.capacity)>0?((livePower/(Number(cfg.capacity)*1000))*100):0,avail=totalInv>0?((activeInv/totalInv)*100):0;
+            document.getElementById('perf_val').innerHTML=perf.toFixed(1)+' <span class="text-sm font-bold text-blue-600">%</span>'; document.getElementById('yield_val').innerHTML=liveEnergy.toFixed(2)+' <span class="text-sm font-bold text-purple-600">kWh</span>'; document.getElementById('avail_val').innerHTML=avail.toFixed(1)+' <span class="text-sm font-bold text-emerald-600">%</span>';
+        }
+
+        function rawSelectedOutputRows() {
+            if (!selectedInverter || !aState.history[selectedInverter]) return [];
+            const now=new Date(),currentMinute=minuteOfDay(now),endMinute=Math.min(TREND_END_MINUTE,currentMinute);
+            const rows=Array.from(aState.history[selectedInverter].values()).filter(row=>{const date=new Date(row.timestamp),minute=minuteOfDay(date);return row.date===todayKey()&&minute>=TREND_START_MINUTE&&minute<=endMinute&&Number.isFinite(Number(row.outputKw));}).sort((a,b)=>a.timestamp-b.timestamp);
+            const firstGenerationIndex=rows.findIndex(row=>Number(row.outputKw)>GENERATION_THRESHOLD_KW); return firstGenerationIndex>=0?rows.slice(firstGenerationIndex):[];
+        }
+        function displayedOutputRows() { const rows=rawSelectedOutputRows(); if(!rows.length)return[]; const bucketed=new Map(); rows.forEach(row=>{const date=new Date(row.timestamp),minute=minuteOfDay(date),bucketMinute=Math.floor(minute/TREND_BUCKET_MINUTES)*TREND_BUCKET_MINUTES;bucketed.set(bucketMinute,row)}); const displayed=Array.from(bucketed.values()).sort((a,b)=>a.timestamp-b.timestamp),latestRaw=rows[rows.length-1],latestDisplayed=displayed[displayed.length-1]; if(!latestDisplayed||latestDisplayed.timestamp!==latestRaw.timestamp)displayed.push(latestRaw); return displayed; }
+
+        function initOutputTrendChart() {
+            const canvas=document.getElementById('outputTrendChart'); if(!canvas)return;
+            outputTrendChart=new Chart(canvas.getContext('2d'),{type:'line',data:{labels:[],datasets:[{label:'Output (kW)',data:[],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.12)',pointBackgroundColor:'#2563eb',pointBorderColor:'#ffffff',pointRadius:2,pointHoverRadius:5,borderWidth:2.5,tension:.28,spanGaps:true,fill:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{type:'category',offset:false,grid:{display:false},ticks:{color:'#64748b',autoSkip:true,maxTicksLimit:14,maxRotation:0,minRotation:0,font:{size:10}},title:{display:true,text:'Time',color:'#64748b',font:{size:10,weight:'bold'}}},y:{beginAtZero:true,grid:{color:'#e2e8f0'},ticks:{color:'#64748b',font:{size:10}},title:{display:true,text:'Output (kW)',color:'#64748b',font:{size:10,weight:'bold'}}}},plugins:{legend:{display:false},tooltip:{callbacks:{label(context){return`Output: ${Number(context.parsed.y||0).toFixed(2)} kW`;}}}}}});
+        }
+        function renderOutputTrend() {
+            const rows=displayedOutputRows(),hasSelection=!!selectedInverter,hasGeneration=rows.length>0; emptyState.classList.toggle('hidden',hasSelection&&hasGeneration);
+            if(!hasSelection)emptyState.textContent='Select an inverter to load today’s output trend.';else if(!hasGeneration)emptyState.textContent='Waiting for this inverter to start generating output today.';
+            exportButton.disabled=!hasSelection||!hasGeneration; if(!WMOS_EXPORT_SOURCES[inverterSelect?.value||''])generateExcelButton.disabled=!hasSelection;
+            outputTrendTitle.textContent=hasSelection?`${inverterLabel(selectedInverter)} Output`:'Inverter Output'; const latest=hasGeneration?rows[rows.length-1]:null; analyticsLiveLabel.textContent=latest?new Date(latest.timestamp).toLocaleTimeString('en-IN',{hour12:false}):'--'; latestOutputValue.textContent=latest?Number(latest.outputKw).toFixed(2):'--';
+            if(!outputTrendChart)return; outputTrendChart.data.labels=rows.map(row=>new Date(row.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})); outputTrendChart.data.datasets[0].data=rows.map(row=>Number(Number(row.outputKw).toFixed(2))); outputTrendChart.update('none');
+        }
+
+        function dbInverterValues(row){return{'Total active power':row.power_kw,'Power factor':row.power_factor,'RY voltage':row.vac_ab,'YB voltage':row.vac_bc,'BR voltage':row.vac_ca,'RY current':row.current_a,'YB current':row.current_b,'BR current':row.current_c,'Daily power yields':row.daily_gen_kwh,'Work state':row.work_state||row.status_text||''};}
+        function loadLatestSnapshot(){if(!window.LiveWsStore?.fastSnapshot)return;window.LiveWsStore.fastSnapshot(currentPlant).then(res=>res.json()).then(res=>{if(res.status!=='success'||!res.data)return;(res.data.inverters||[]).forEach(row=>applyInverterReading(row.inverter_name,dbInverterValues(row),row.snapshot_at||''));populateAnalyticsInverterOptions();updateAnalyticsCards();renderOutputTrend();}).catch(()=>{});}
+        function normalizeWsRows(message){const rows=[],baseDevice=message.device||message.deviceName||message.task||'';if(message.values&&typeof message.values==='object')rows.push({device:baseDevice,values:message.values,time:message.time||message.timestamp||message.ts||''});if(Array.isArray(message.data))message.data.forEach(row=>{if(!row||typeof row!=='object')return;const rowDevice=row.device||row.deviceName||baseDevice,values=row.values&&typeof row.values==='object'?row.values:row;rows.push({device:rowDevice,values,time:row.time||row.timestamp||row.ts||message.time||message.timestamp||''});});return rows;}
+        function requestSelectedInverterToday(){if(!selectedInverter||!analyticsSocket||analyticsSocket.readyState!==WebSocket.OPEN)return;const deviceName=aState.inverters[selectedInverter]?.wsName||selectedInverter;analyticsSocket.send(JSON.stringify({type:'get_daily_data',unit_id:wsUnitId,device:deviceName,date:todayKey()}));}
+        function handleDeviceList(devices){if(!Array.isArray(devices))return;devices.forEach(device=>{const name=(device.name||device.device||'').toString();if(isInverterDeviceName(name))ensureInverter(name);});populateAnalyticsInverterOptions();requestSelectedInverterToday();}
+
+        function connectWSAnalytics(){
+            const wsUrl=(cfg.ws_url || "wss://vinobasolar.scadahub.in:5001"); if(!wsUrl)return; const ws=new WebSocket(wsUrl); analyticsSocket=ws;
+            ws.onopen=function(){document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]';ws.send(JSON.stringify({type:'subscribe',unit_id:wsUnitId}));ws.send(JSON.stringify({type:'get_devices',unit_id:wsUnitId}));requestSelectedInverterToday();};
+            ws.onmessage=function(event){try{const message=JSON.parse(event.data),messageUnitId=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';if(messageUnitId&&messageUnitId!==wsUnitId)return;window.LiveWsStore?.storeMessage?.(message,currentPlant);if(message.type==='device_list'){handleDeviceList(message.devices||[]);return;}let updated=false;normalizeWsRows(message).forEach(row=>{const device=row.device||message.device||message.deviceName||'';if(!isInverterDeviceName(device))return;if(applyInverterReading(device,row.values,row.time||''))updated=true;});if(updated){updateAnalyticsCards();renderOutputTrend();}}catch(err){}};
+            ws.onclose=function(){if(analyticsSocket===ws)analyticsSocket=null;document.getElementById('refreshPulse').className='w-2.5 h-2.5 bg-red-500 rounded-full';setTimeout(connectWSAnalytics,2000);};
+        }
+
+        function connectWSAnalyticsWmos(){
+            if(!COMMON_WMOS_WS_URL || COMMON_WMOS_WS_URL === (cfg.ws_url || ''))return;const ws=new WebSocket(COMMON_WMOS_WS_URL);analyticsWmosSocket=ws;
+            ws.onopen=function(){ws.send(JSON.stringify({type:'subscribe',unit_id:COMMON_WMOS_UNIT_ID}));ws.send(JSON.stringify({type:'get_devices',unit_id:COMMON_WMOS_UNIT_ID}));requestSelectedWmosToday();};
+            ws.onmessage=function(event){try{const message=JSON.parse(event.data),unit=message.unit_id||message.request?.unit_id||message.unitId||message.request?.unitId||'';if(unit&&unit!==COMMON_WMOS_UNIT_ID)return;captureAnalyticsWmosMessage(message);if(message.type==='device_list')requestSelectedWmosToday();}catch(err){}};
+            ws.onclose=function(){if(analyticsWmosSocket===ws)analyticsWmosSocket=null;setTimeout(connectWSAnalyticsWmos,3000);};
+        }
+
+        // Builds a complete minute-by-minute report only between the first and
+        // last actual WebSocket samples. It never invents rows after the last sample.
+        function minuteSeries(rawRows,valueSelector,sourceSelector){
+            const raw=(rawRows||[]).filter(row=>Number.isFinite(Number(row.timestamp))).sort((a,b)=>a.timestamp-b.timestamp);if(!raw.length)return[];
+            const actualByMinute=new Map();raw.forEach(row=>actualByMinute.set(Math.floor(Number(row.timestamp)/60000),row));
+            const firstMinute=Math.floor(Number(raw[0].timestamp)/60000),lastMinute=Math.floor(Number(raw[raw.length-1].timestamp)/60000),rows=[];let lastReading=null;
+            for(let minute=firstMinute;minute<=lastMinute;minute+=1){const actual=actualByMinute.get(minute)||null;if(actual)lastReading=actual;if(!lastReading)continue;const timestamp=new Date(minute*60000);rows.push({date:localDateKey(timestamp),time:timestamp.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),value:valueSelector(lastReading),source:sourceSelector(lastReading),sampleTime:new Date(lastReading.timestamp).toLocaleTimeString('en-IN',{hour12:false}),status:actual?'Live sample':'Carried forward',reading:lastReading});}
+            return rows;
+        }
+
+        function rawSelectedInverterExportRows(){if(!selectedInverter||!analyticsRawInverterHistory[selectedInverter])return[];return Array.from(analyticsRawInverterHistory[selectedInverter].values()).filter(row=>localDateKey(new Date(row.timestamp))===todayKey()).sort((a,b)=>a.timestamp-b.timestamp);}
+        function excelCellValue(value){if(value===null||value===undefined)return'';if(typeof value==='number'||typeof value==='boolean')return value;if(typeof value==='object')return JSON.stringify(value);return String(value);}
+
+        function fullInverterExportRows(){
+            const raw=rawSelectedInverterExportRows();if(!raw.length)return[];
+            const metricKeys=[];const seen=new Set();raw.forEach(row=>Object.keys(row.values||{}).forEach(key=>{if(!seen.has(key)){seen.add(key);metricKeys.push(key);}}));
+            return minuteSeries(raw,row=>row.outputKw,row=>row.outputSource||'WebSocket').map(minute=>{
+                const reading=minute.reading||{},base={Date:minute.date,Time:minute.time,Inverter:inverterLabel(selectedInverter),'WebSocket Device':reading.device||aState.inverters[selectedInverter]?.wsName||selectedInverter,'Output (kW)':Number.isFinite(Number(reading.outputKw))?Number(Number(reading.outputKw).toFixed(3)):'','Daily Energy (kWh)':Number.isFinite(Number(reading.dailyGen))?Number(Number(reading.dailyGen).toFixed(3)):'','Output Source':reading.outputSource||'', 'Work State':reading.workState||'','Sample Time':minute.sampleTime,'Reading Status':minute.status};
+                metricKeys.forEach(key=>{const column=Object.prototype.hasOwnProperty.call(base,key)?`WS ${key}`:key;base[column]=excelCellValue(reading.values?.[key]);});return base;
+            });
+        }
+
+        function reportSummary(sourceLabel,rawRows,exportedRows,unitId){
+            const raw=(rawRows||[]).filter(row=>Number.isFinite(Number(row.timestamp))).sort((a,b)=>a.timestamp-b.timestamp);if(!raw.length)return[];
+            const first=new Date(raw[0].timestamp),last=new Date(raw[raw.length-1].timestamp);return[
+                {Field:'Plant',Value:plantNames[currentPlant]||currentPlant},{Field:'Selected Source',Value:sourceLabel},{Field:'Report Date',Value:todayKey()},{Field:'WebSocket Unit ID',Value:unitId},{Field:'Start Time',Value:first.toLocaleTimeString('en-IN',{hour12:false})},{Field:'End Time',Value:last.toLocaleTimeString('en-IN',{hour12:false})},{Field:'Actual WebSocket Samples',Value:raw.length},{Field:'Exported Minute Rows',Value:exportedRows.length},{Field:'Generated At',Value:new Date().toLocaleString('en-IN',{hour12:false})}
+            ];
+        }
+
+        function writeAnalyticsWorkbook(rows,sheetName,fileBase,widths,summaryRows=[]){
+            if(!rows.length)return false;if(window.XLSX){const book=XLSX.utils.book_new();if(summaryRows.length){const summary=XLSX.utils.json_to_sheet(summaryRows);summary['!cols']=[{wch:24},{wch:32}];XLSX.utils.book_append_sheet(book,summary,'Summary');}const sheet=XLSX.utils.json_to_sheet(rows);sheet['!cols']=widths;XLSX.utils.book_append_sheet(book,sheet,sheetName);XLSX.writeFile(book,`${fileBase}.xlsx`);return true;}
+            const headers=Object.keys(rows[0]),csv=[headers.join(','),...rows.map(row=>headers.map(key=>`"${String(row[key]??'').replace(/"/g,'""')}"`).join(','))].join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${fileBase}.csv`;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);return true;
+        }
+
+        function exportSelectedInverterExcel(){
+            if(!selectedInverter)return false;const raw=rawSelectedInverterExportRows(),rows=fullInverterExportRows();if(!rows.length)return false;const safeName=selectedInverter.replace(/[^a-z0-9_-]+/gi,'_'),summary=reportSummary(inverterLabel(selectedInverter),raw,rows,wsUnitId);const widths=Object.keys(rows[0]).map(key=>({wch:Math.min(32,Math.max(12,key.length+2))}));return writeAnalyticsWorkbook(rows,'Full Inverter Data',`${currentPlant}_${safeName}_${todayKey()}_full_report`,widths,summary);
+        }
+
+        function exportSelectedWmosExcel(sourceKey){
+            const source=WMOS_EXPORT_SOURCES[sourceKey];if(!source)return false;const raw=Array.from(analyticsWmosHistory[sourceKey]?.values()||[]).sort((a,b)=>a.timestamp-b.timestamp),minuteRows=minuteSeries(raw,row=>Number(row.value),()=>source.label);if(!minuteRows.length)return false;
+            const rows=minuteRows.map(row=>({Date:row.date,Time:row.time,'Data Source':source.label,'WebSocket Device':row.reading?.device||source.device,Value:Number(Number(row.value).toFixed(source.decimals)),Unit:source.unit,'Sample Time':row.sampleTime,'Reading Status':row.status}));
+            const safeName=source.label.replace(/[^a-z0-9_-]+/gi,'_'),summary=reportSummary(source.label,raw,rows,COMMON_WMOS_UNIT_ID);return writeAnalyticsWorkbook(rows,'Full WMOS Data',`${currentPlant}_${safeName}_${todayKey()}_full_report`,[{wch:12},{wch:12},{wch:24},{wch:24},{wch:14},{wch:12},{wch:14},{wch:18}],summary);
+        }
+
+        function waitForHistory(test,timeoutMs=3500){return new Promise(resolve=>{if(test()){resolve(true);return;}const started=Date.now(),timer=setInterval(()=>{if(test()){clearInterval(timer);resolve(true);}else if(Date.now()-started>=timeoutMs){clearInterval(timer);resolve(false);}},100);});}
+
+        async function generateSelectedAnalyticsExcel(){
+            const selected=inverterSelect?.value||'';if(!selected)return;const oldHtml=generateExcelButton.innerHTML;generateExcelButton.disabled=true;generateExcelButton.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i><span>Loading full history...</span>';
+            try{
+                if(WMOS_EXPORT_SOURCES[selected]){requestSelectedWmosToday();await waitForHistory(()=>analyticsWmosHistory[selected]?.size>0);if(!exportSelectedWmosExcel(selected)){alert('No WMOS WebSocket history is available yet for the selected source.');}}
+                else{selectedInverter=selected;requestSelectedInverterToday();await waitForHistory(()=>analyticsRawInverterHistory[selected]?.size>0);if(!exportSelectedInverterExcel()){alert('No inverter WebSocket history is available yet for the selected inverter.');}}
+            }finally{generateExcelButton.innerHTML=oldHtml;generateExcelButton.disabled=!selected;}
+        }
+
+        // Window-capture runs before the legacy WMOS helper can stop propagation.
+        window.addEventListener('change',event=>{const select=event.target;if(!(select instanceof HTMLSelectElement)||select.id!=='analyticsInverterSelect')return;const selected=select.value||'';generateExcelButton.disabled=!selected;if(WMOS_EXPORT_SOURCES[selected])requestSelectedWmosToday();},true);
+        inverterSelect?.addEventListener('change',()=>{selectedInverter=inverterSelect.value;renderOutputTrend();if(!WMOS_EXPORT_SOURCES[selectedInverter])requestSelectedInverterToday();});
+        exportButton?.addEventListener('click',exportSelectedInverterExcel);generateExcelButton?.addEventListener('click',generateSelectedAnalyticsExcel);
+
+        initOutputTrendChart();seedConfiguredInverters();renderOutputTrend();loadLatestSnapshot();connectWSAnalytics();connectWSAnalyticsWmos();
+    </script>
+</body>
+</html>
