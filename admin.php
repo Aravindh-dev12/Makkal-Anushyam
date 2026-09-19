@@ -66,10 +66,22 @@ $adminUser = $user;
                         <div class="w-8 h-8 bg-blue-600 text-white rounded-md flex items-center justify-center"><i class="fa-solid fa-bolt text-sm"></i></div>
                         <h1 class="text-lg font-bold tracking-tight text-slate-800">Vinoba Solar Dashboard</h1>
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
                         <span id="ws-status" class="text-xs font-bold text-red-500"><i class="fa-solid fa-circle text-[8px] mr-1"></i>Disconnected</span>
                         
-                        <div class="h-6 w-px bg-slate-200 mx-1"></div>
+                        <div class="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+                        <div class="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md">
+                            <span class="font-bold text-slate-500">SLD Plant</span>
+                            <select id="admin-sld-plant" class="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="vinoba-velliyanai">Vinoba Velliyanai</option>
+                                <option value="makkalpower">Makkal Power</option>
+                                <option value="anushyam">Anushyam Plant</option>
+                            </select>
+                            <button id="admin-open-sld" type="button" class="px-2.5 py-1 text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded transition-colors">
+                                Open SLD
+                            </button>
+                        </div>
                         
                         <div class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md" title="Live combined active power across all plants">
                             <i class="fa-solid fa-bolt text-amber-500"></i>
@@ -135,6 +147,29 @@ $adminUser = $user;
 
         const plantState = {};
         const authToken = new URLSearchParams(window.location.search).get('token') || '';
+        const adminSldPlant = document.getElementById('admin-sld-plant');
+        const adminOpenSld = document.getElementById('admin-open-sld');
+
+        function adminInitialPlant() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('plant') || 'vinoba-velliyanai';
+        }
+
+        function updateAdminSldLink() {
+            const plant = adminSldPlant?.value || 'vinoba-velliyanai';
+            if (adminOpenSld) {
+                adminOpenSld.onclick = () => {
+                    const token = authToken ? '&token=' + encodeURIComponent(authToken) : '';
+                    window.location.href = 'sld.php?plant=' + encodeURIComponent(plant) + token;
+                };
+            }
+        }
+
+        if (adminSldPlant) {
+            adminSldPlant.value = adminInitialPlant();
+            adminSldPlant.addEventListener('change', updateAdminSldLink);
+        }
+        updateAdminSldLink();
 
         function localDateKey() {
             const now = new Date();
