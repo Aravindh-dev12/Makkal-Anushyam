@@ -113,16 +113,20 @@ function wsNumericValue($value) {
 
 function fetchLiveData($plant) {
     $ws = new SimpleWSClient();
-    if (!$ws->connect('161.97.87.75', 5000)) {
-        return ['error' => 'WS connect failed'];
+    if (!$ws->connect('vinobasolar.scadahub.in', 5001)) {
+        return ['error' => 'SCADA WebSocket connect failed'];
     }
+    $ws->sendText(json_encode(['type' => 'get_devices', 'unit_id' => $plant]));
     $ws->sendText(json_encode(['type' => 'subscribe', 'unit_id' => $plant]));
 $frames = []; $start = time();
     while (time() - $start < 6) {
         $frame = $ws->readFrame();
         if ($frame && isset($frame['payload']) && $frame['opcode'] === 'text') {
             $j = json_decode($frame['payload'], true);
-            if ($j && (isset($j['unit_id']) || isset($j['task']) || isset($j['device']) || isset($j['deviceName']))) $frames[] = $j;
+            if ($j && is_array($j) && (
+                isset($j['unit_id']) || isset($j['task']) || isset($j['device']) || isset($j['deviceName']) ||
+                isset($j['data']) || isset($j['values']) || isset($j['payload']) || isset($j['result'])
+            )) $frames[] = $j;
         }
         usleep(2000);
     }
@@ -131,11 +135,11 @@ $frames = []; $start = time();
     $latest = ['vcb'=>[],'trafo'=>[],'wms'=>[]];
     $invRaw = [];
     foreach ($frames as $f) {
-        $task = strtolower($f['task'] ?? '');
-        $dev = strtolower($f['device'] ?? '');
+        $task = strtolower($f['task'] ?? $f['pageName'] ?? $f['type'] ?? '');
+        $dev = strtolower($f['device'] ?? $f['deviceName'] ?? $f['sensor'] ?? '');
         $v = $f['values'] ?? [];
         if (!is_array($v) && isset($f['data']) && is_array($f['data'])) $v = $f['data'];
-        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || strpos($dev, 'pyranometer') !== false || strpos($dev, 'pannel') !== false || strpos($dev, 'ambient') !== false || strpos($dev, 'wind') !== false || strpos($dev, 'humidity') !== false) {
+        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance/i', $dev.' '.$task)) {
             foreach ($v as $vk => $vv) {
                 $vkl = strtolower($vk);
                 if (strpos($vkl, 'radiation') !== false || strpos($dev, 'pyranometer') !== false || strpos($vkl, 'raw data') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['radiation'] = $num; }
