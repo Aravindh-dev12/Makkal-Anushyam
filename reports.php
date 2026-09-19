@@ -344,48 +344,48 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return Number.isFinite(n) ? n : null;
         }
 
-        function captureLiveWeatherValues(values, device, task, sourceTime, unitId = '') {
-            if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+        function resolveReportWeatherMetric(values, device = '', task = '') {
+            if (!values || typeof values !== 'object' || Array.isArray(values)) return null;
+            const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
             const dev = String(device || '').toLowerCase().trim();
             const taskStr = String(task || '').toLowerCase().trim();
-            const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-            if (unitId && String(unitId) !== String(plantSelect.value || 'vinoba-velliyanai')) return false;
-            if (!/^(wmos|wmas|weather)$/.test(taskStr)) return false;
-
+            const aliases = {
+                rad: ['raw data', 'radiation', 'irradiance'],
+                ptemp: ['pannel temperature','panel temperature','module temperature'],
+                atemp: ['ambient temperature','ambient temp'],
+                wind: ['windspeed','wind speed','wind velocity'],
+                hum: ['humidity','relative humidity']
+            };
             let metric = '';
-            let raw = null;
-            if (/pyranometer|pyrimeter/.test(dev)) {
-                metric = 'rad';
-                const key = Object.keys(values).find(k => normalizeKey(k) === 'raw data');
-                raw = key ? values[key] : null;
-            } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) {
-                metric = 'ptemp';
-                const key = Object.keys(values).find(k => ['pannel temperature','panel temperature','module temperature'].includes(normalizeKey(k)));
-                raw = key ? values[key] : null;
-            } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) {
-                metric = 'atemp';
-                const key = Object.keys(values).find(k => normalizeKey(k) === 'ambient temperature');
-                raw = key ? values[key] : null;
-            } else if (/^wind$|wind.*speed|anemometer/.test(dev)) {
-                metric = 'wind';
-                const key = Object.keys(values).find(k => ['windspeed','wind speed'].includes(normalizeKey(k)));
-                raw = key ? values[key] : null;
-            } else if (/^humidity$|humid/.test(dev)) {
-                metric = 'hum';
-                const key = Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalizeKey(k)));
-                raw = key ? values[key] : null;
-            } else {
-                return false;
-            }
+            if (/pyranometer|pyrimeter/.test(dev)) metric = 'rad';
+            else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) metric = 'ptemp';
+            else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) metric = 'atemp';
+            else if (/^wind$|wind.*speed|anemometer/.test(dev)) metric = 'wind';
+            else if (/^humidity$|humid/.test(dev)) metric = 'hum';
 
-            const numeric = raw === null || raw === undefined ? null : normalizeWeatherValue(raw);
-            if (metric === 'ptemp' && numeric === null) return false;
-            if (numeric === null) return false;
-            if (metric === 'rad') liveWeather.rad = numeric;
-            if (metric === 'ptemp') liveWeather.ptemp = numeric;
-            if (metric === 'atemp') liveWeather.atemp = numeric;
-            if (metric === 'wind') liveWeather.wind = numeric;
-            if (metric === 'hum') liveWeather.hum = numeric;
+            if (!metric && /^(wmos|wmas|weather)$/.test(taskStr)) {
+                for (const candidate of Object.keys(aliases)) {
+                    const wanted = new Set(aliases[candidate].map(normalizeKey));
+                    const key = Object.keys(values).find(k => wanted.has(normalizeKey(k)));
+                    if (key) { metric = candidate; break; }
+                }
+            }
+            if (!metric) return null;
+
+            const wanted = new Set((aliases[metric] || []).map(normalizeKey));
+            const key = Object.keys(values).find(k => wanted.has(normalizeKey(k)));
+            if (!key) return null;
+            const numeric = normalizeWeatherValue(values[key]);
+            return numeric === null ? null : { metric, value: numeric };
+        }
+
+        function captureLiveWeatherValues(values, device, task, sourceTime, unitId = '') {
+            if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+            if (unitId && String(unitId) !== String(plantSelect.value || 'vinoba-velliyanai')) return false;
+            const resolved = resolveReportWeatherMetric(values, device, task);
+            if (!resolved) return false;
+
+            liveWeather[resolved.metric] = resolved.value;
             liveWeather.lastAt = Date.now();
             liveWeather.lastSampleAt = sourceTime ? new Date(sourceTime).getTime() || Date.now() : Date.now();
             if (unitId) liveWmasUnitId = unitId;
@@ -394,46 +394,28 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             }
             return true;
         }
+
         function handleWSDailyWeather(rows, fallbackDevice = '', fallbackTask = '') {
             if (!Array.isArray(rows) || !rows.length) return;
             rows.forEach(r => {
-                const s = slot15Min(r.time || r.timestamp);
+                const s = slot15Min(r.time || r.timestamp || r.recorded_at);
                 if (!s) return;
                 if (!weatherBuckets[s]) weatherBuckets[s] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
-                const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase().trim();
-                const task = String(r.task || fallbackTask || '').toLowerCase().trim();
-                const v = r.values && typeof r.values === 'object' ? r.values : {};
-                if (!/^(wmos|wmas|weather)$/.test(task)) return;
-
-                const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-                const readExact = keys => {
-                    const wanted = new Set(keys.map(normalizeKey));
-                    const key = Object.keys(v).find(k => wanted.has(normalizeKey(k)));
-                    return key ? normalizeWeatherValue(v[key]) : null;
-                };
-
-                if (/pyranometer|pyrimeter/.test(dev)) {
-                    const value = readExact(['raw data']);
-                    if (value !== null) weatherBuckets[s].rad = value;
-                } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) {
-                    const value = readExact(['pannel temperature','panel temperature','module temperature']);
-                    if (value !== null) weatherBuckets[s].ptemp = value;
-                } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) {
-                    const value = readExact(['ambient temperature']);
-                    if (value !== null) weatherBuckets[s].atemp = value;
-                } else if (/^wind$|wind.*speed|anemometer/.test(dev)) {
-                    const value = readExact(['windspeed','wind speed']);
-                    if (value !== null) weatherBuckets[s].wind = value;
-                } else if (/^humidity$|humid/.test(dev)) {
-                    const value = readExact(['humidity','relative humidity']);
-                    if (value !== null) weatherBuckets[s].hum = value;
-                }
+                const dev = r.device || r.deviceName || fallbackDevice || '';
+                const task = r.task || r.pageName || fallbackTask || '';
+                const v = r.values && typeof r.values === 'object'
+                    ? r.values
+                    : (r.data && typeof r.data === 'object' ? r.data : r);
+                const resolved = resolveReportWeatherMetric(v, dev, task);
+                if (!resolved) return;
+                weatherBuckets[s][resolved.metric] = resolved.value;
             });
             if (currentReportSection === 'wmas') renderWmasReportFromBuckets();
         }
 
         function renderWmasLiveRow() {
-            const time = new Date().toTimeString().slice(0,5);
+            const sampleTime = liveWeather.lastSampleAt ? new Date(liveWeather.lastSampleAt) : new Date();
+            const time = sampleTime.toTimeString().slice(0,5);
             weatherBuckets[slot15Min(time)] = {
                 rad: liveWeather.rad,
                 ptemp: liveWeather.ptemp,
