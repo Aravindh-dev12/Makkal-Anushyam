@@ -301,8 +301,10 @@ function deviceToWmosMetric(device) {
     return '';
 }
 
-function hasWeatherTask(task) {
-    return /^(wmos|weather)$/i.test(String(task || '').trim());
+function hasWeatherTask(task, device = '') {
+    const taskName = String(task || '').trim().toLowerCase();
+    if (/^(wmos|wmas|weather)$/.test(taskName)) return true;
+    return deviceToWmosMetric(device) !== '';
 }
 
 function exactWmosValue(metric, values) {
@@ -465,7 +467,7 @@ async function loadStoredWmosData() {
 }
 
 function consumeWmosFrame(values, device, task, sourceTime) {
-    if (!hasWeatherTask(task)) return false;
+    if (!hasWeatherTask(task, device)) return false;
 
     // SCADA sends WMOS as separate device messages. Do not require the
     // device name to be perfectly configured: identify the metric from the
@@ -515,7 +517,7 @@ function walkMessage(node, inheritedDevice = '', inheritedTask = '', inheritedTi
     const time = node.time || node.timestamp || node.ts || node.recorded_at || inheritedTime;
 
     if (node.values && typeof node.values === 'object' && !Array.isArray(node.values)) {
-        if (hasWeatherTask(task)) consumeWmosFrame(node.values, device, task, time);
+        if (hasWeatherTask(task, device)) consumeWmosFrame(node.values, device, task, time);
         else if (isInverterDevice(device, task) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, node.values, time, task);
     }
 
@@ -559,7 +561,7 @@ function consumeLiveMessage(message) {
     const time = message.time || message.timestamp || message.ts || message.recorded_at || '';
 
     if (message.values && typeof message.values === 'object' && !Array.isArray(message.values)) {
-        if (hasWeatherTask(task)) consumeWmosFrame(message.values, device, task, time);
+        if (hasWeatherTask(task, device)) consumeWmosFrame(message.values, device, task, time);
         else if (isInverterDevice(device, task) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, message.values, time, task);
     }
     walkMessage(message.data, device, task, time);
