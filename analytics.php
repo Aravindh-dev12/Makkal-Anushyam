@@ -302,7 +302,7 @@ function deviceToWmosMetric(device) {
 }
 
 function hasWeatherTask(task) {
-    return /^(wmos|wmas|weather)$/i.test(String(task || '').trim());
+    return /^(wmos|weather)$/i.test(String(task || '').trim());
 }
 
 function exactWmosValue(metric, values) {
