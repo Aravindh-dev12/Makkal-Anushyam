@@ -495,17 +495,17 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const rad = readWmosMetricValue(values, ['raw data', 'radiation', 'solar radiation', 'irradiance'], [/^raw data$/, /radiation/, /irradiance/, /pyran/]);
             let panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/, /^temp data$/]);
             let ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
+            // Match Makkal Home's device-context fallbacks for generic sensor keys.
+            const deviceText = normalizeWmosMetricName(device);
             // Exact live SCADA Wind frame: device="Wind", values.windspeed.
             let wind = null;
             if (/^wind$|wind speed|anemometer/.test(deviceText)) {
                 const directWindKey = Object.keys(values).find(key => normalizeWmosMetricName(key) === 'windspeed' || normalizeWmosMetricName(key) === 'wind speed');
                 if (directWindKey) wind = wmosNumber(values[directWindKey]);
             }
-            if (wind === null) wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'wind_speed', 'wind velocity', 'windvelocity', 'wind', 'speed', 'velocity', 'anemometer'], [/wind.*speed/, /windspeed/, /wind.*velocity/, /velocity.*wind/, /^wind$/, /anemometer/, /(^|\\s)speed(?:\\s|$)/, /velocity/]);
+            if (wind === null) wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'wind_speed', 'wind velocity', 'windvelocity', 'wind', 'speed', 'velocity', 'anemometer'], [/wind.*speed/, /windspeed/, /wind.*velocity/, /velocity.*wind/, /^wind$/, /anemometer/, /(^|\s)speed(?:\s|$)/, /velocity/]);
             let humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
 
-            // Match Makkal Home's device-context fallbacks for generic sensor keys.
-            const deviceText = normalizeWmosMetricName(device);
             if (panel === null && /pannel|panel|module/.test(deviceText)) panel = readWmosMetricValue(values, [], [/temp/]);
             if (ambient === null && /ambient/.test(deviceText)) ambient = readWmosMetricValue(values, [], [/temp/]);
             if (wind === null && /wind|anemometer|anem/.test(deviceText)) wind = readWmosMetricValue(values, [], [/wind|speed|velocity|anemometer/]);
