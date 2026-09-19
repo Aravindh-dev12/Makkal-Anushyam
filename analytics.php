@@ -396,17 +396,7 @@ function addInverterSample(name, values, sourceTime, task = '') {
     const idx = arr.findIndex(row => row.timestamp === sample.timestamp);
     if (idx >= 0) arr[idx] = sample; else arr.push(sample);
     arr.sort((a, b) => a.timestamp - b.timestamp);
-    // Keep the complete report-day history in memory. Excel export will
-    // reduce this to one actual sample per minute; it must not invent
-    // missing minutes or discard the morning data after 5,000 samples.
-    const now = new Date();
-    const start = new Date(now); start.setHours(5, 0, 0, 0);
-    const end = new Date(now); end.setHours(20, 0, 0, 0);
-    const endTs = Math.min(now.getTime(), end.getTime());
-    state.inverterHistory[key] = arr.filter(item => {
-        const ts = Number(item.timestamp);
-        return ts >= start.getTime() && ts <= endTs;
-    });
+    if (arr.length > 5000) arr.splice(0, arr.length - 5000);
 }
 
 function mergeWmosSample(metric, value, sourceTime, device) {
@@ -426,15 +416,7 @@ function mergeWmosSample(metric, value, sourceTime, device) {
     row[metric + '_device'] = device || WMOS_DEVICES[metric].device;
     row[metric + '_sample_time'] = timestamp;
     state.wmosHistory.sort((a, b) => a.timestamp - b.timestamp);
-    // Keep the complete report-day history. Export uses actual samples only.
-    const now = new Date();
-    const start = new Date(now); start.setHours(5, 0, 0, 0);
-    const end = new Date(now); end.setHours(20, 0, 0, 0);
-    const endTs = Math.min(now.getTime(), end.getTime());
-    state.wmosHistory = state.wmosHistory.filter(item => {
-        const ts = Number(item.timestamp);
-        return ts >= start.getTime() && ts <= endTs;
-    });
+    if (state.wmosHistory.length > 5000) state.wmosHistory.splice(0, state.wmosHistory.length - 5000);
 }
 
 function consumeWmosFrame(values, device, task, sourceTime) {
@@ -681,27 +663,9 @@ function xlsxWorkbook(sheetName, rows, summary) {
     return true;
 }
 
-function reportMinuteRows(rows) {
-    const byMinute = new Map();
-    rows.slice().sort((a, b) => a.timestamp - b.timestamp).forEach(row => {
-        const d = new Date(row.timestamp);
-        d.setSeconds(0, 0);
-        // Keep the latest actual sample received in each minute.
-        byMinute.set(d.getTime(), row);
-    });
-    return Array.from(byMinute.values()).sort((a, b) => a.timestamp - b.timestamp);
-}
-
 function exportInverterExcel() {
     if (!state.selectedInverter) return false;
-    const sourceRows = selectedInverterHistory().filter(row => {
-        const d = new Date(row.timestamp);
-        const now = new Date();
-        const start = new Date(now); start.setHours(5, 0, 0, 0);
-        const end = new Date(now); end.setHours(20, 0, 0, 0);
-        return row.timestamp >= start.getTime() && row.timestamp <= Math.min(now.getTime(), end.getTime());
-    });
-    const rows = reportMinuteRows(sourceRows).map(row => {
+    const rows = selectedInverterHistory().sort((a, b) => a.timestamp - b.timestamp).map(row => {
         const output = row.powerKw == null ? '' : Number(row.powerKw).toFixed(3);
         const daily = row.dailyKwh == null ? '' : Number(row.dailyKwh).toFixed(3);
         return {
@@ -710,13 +674,13 @@ function exportInverterExcel() {
             Inverter: row.device,
             'Output (kW)': output,
             'Daily Energy (kWh)': daily,
-            'Sample Status': 'Actual live sample for this minute'
+            'Sample Status': 'Live WebSocket sample'
         };
     });
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: state.inverters[state.selectedInverter]?.wsName || state.selectedInverter },
-        { Field: 'Export Type', Value: 'Live WebSocket data received by Analytics (05:00-20:00, one actual sample per minute)' },
+        { Field: 'Export Type', Value: 'Live WebSocket data received by Analytics' },
         { Field: 'Actual Samples', Value: rows.length },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
@@ -724,13 +688,7 @@ function exportInverterExcel() {
 }
 
 function exportWmosExcel() {
-    const now = new Date();
-    const start = new Date(now); start.setHours(5, 0, 0, 0);
-    const end = new Date(now); end.setHours(20, 0, 0, 0);
-    const endTs = Math.min(now.getTime(), end.getTime());
-    const sourceRows = reportMinuteRows(state.wmosHistory.filter(row =>
-        row.timestamp >= start.getTime() && row.timestamp <= endTs
-    ));
+    const sourceRows = state.wmosHistory.slice().sort((a, b) => a.timestamp - b.timestamp);
     if (!sourceRows.length) return false;
     const rows = sourceRows.map(row => ({
         Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
@@ -745,12 +703,12 @@ function exportWmosExcel() {
         'Ambient Device': row.ambientTemp_device ?? '',
         'Wind Device': row.windSpeed_device ?? '',
         'Humidity Device': row.humidity_device ?? '',
-        'Reading Type': 'Actual live sample for this minute'
+        'Reading Type': 'Actual live WebSocket samples merged by minute'
     }));
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics (05:00-20:00, one actual sample per minute)' },
+        { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
         { Field: 'Actual Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
