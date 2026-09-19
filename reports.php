@@ -779,7 +779,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             document.getElementById('reportHeaderPlantName').innerText = (plantMeta[plant]?.name || plant).toUpperCase() + ' SOLAR ENERGY';
 
             const tbody = document.getElementById('reportTableBody');
-            tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Fetching real telemetry...</p></div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Connecting to live telemetry...</p></div></td></tr>';
 
             if (currentReportSection === 'wmas') {
                 pendingReportRequest = false;
@@ -788,8 +788,11 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 weatherBuckets = {};
                 liveWmasUnitId = '';
                 if (type === 'daily' && selectedDate === localDateKey()) {
+                    // Live-first: connect/render directly from the SCADA stream.
                     connectReportWS();
-                    if (!requestWmasDailyHistory()) setTimeout(requestWmasDailyHistory, 800);
+                    renderWmasLiveRow();
+                    // History is supplemental and must never delay live values.
+                    setTimeout(() => { requestWmasDailyHistory(); }, 100);
                 } else {
                     try {
                         await fetchReportFromAPI();
