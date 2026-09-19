@@ -723,21 +723,53 @@ function exportWmosExcel() {
     // One row containing all five WMOS measurements at the moment of download.
     // Each metric keeps its own sample time because the five devices can report
     // a few seconds apart.
-    const snapshot = [{
-        Date: new Date().toLocaleDateString('en-IN'),
-        Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-        'Radiation (W/m²)': state.wmos.radiation ?? '',
-        'Panel Temperature (°C)': state.wmos.panelTemp ?? '',
-        'Ambient Temperature (°C)': state.wmos.ambientTemp ?? '',
-        'Wind Speed (m/s)': state.wmos.windSpeed ?? '',
-        'Humidity (%RH)': state.wmos.humidity ?? '',
-        'Radiation Sample Time': state.wmosHistory.at(-1)?.radiation_sample_time ? new Date(state.wmosHistory.at(-1).radiation_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
-        'Panel Sample Time': state.wmosHistory.at(-1)?.panelTemp_sample_time ? new Date(state.wmosHistory.at(-1).panelTemp_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
-        'Ambient Sample Time': state.wmosHistory.at(-1)?.ambientTemp_sample_time ? new Date(state.wmosHistory.at(-1).ambientTemp_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
-        'Wind Sample Time': state.wmosHistory.at(-1)?.windSpeed_sample_time ? new Date(state.wmosHistory.at(-1).windSpeed_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
-        'Humidity Sample Time': state.wmosHistory.at(-1)?.humidity_sample_time ? new Date(state.wmosHistory.at(-1).humidity_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
-        'Reading Type': 'Current live snapshot - all five WMOS values combined'
-    }];
+    const snapshot = [
+        {
+            Date: new Date().toLocaleDateString('en-IN'),
+            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': 'Radiation',
+            Device: WMOS_DEVICES.radiation.device,
+            Value: state.wmos.radiation ?? '',
+            Unit: WMOS_DEVICES.radiation.unit,
+            'Reading Type': 'Current live value'
+        },
+        {
+            Date: new Date().toLocaleDateString('en-IN'),
+            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': 'Panel Temperature',
+            Device: WMOS_DEVICES.panelTemp.device,
+            Value: state.wmos.panelTemp ?? '',
+            Unit: WMOS_DEVICES.panelTemp.unit,
+            'Reading Type': 'Current live value'
+        },
+        {
+            Date: new Date().toLocaleDateString('en-IN'),
+            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': 'Ambient Temperature',
+            Device: WMOS_DEVICES.ambientTemp.device,
+            Value: state.wmos.ambientTemp ?? '',
+            Unit: WMOS_DEVICES.ambientTemp.unit,
+            'Reading Type': 'Current live value'
+        },
+        {
+            Date: new Date().toLocaleDateString('en-IN'),
+            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': 'Wind Speed',
+            Device: WMOS_DEVICES.windSpeed.device,
+            Value: state.wmos.windSpeed ?? '',
+            Unit: WMOS_DEVICES.windSpeed.unit,
+            'Reading Type': 'Current live value'
+        },
+        {
+            Date: new Date().toLocaleDateString('en-IN'),
+            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': 'Humidity',
+            Device: WMOS_DEVICES.humidity.device,
+            Value: state.wmos.humidity ?? '',
+            Unit: WMOS_DEVICES.humidity.unit,
+            'Reading Type': 'Current live value'
+        }
+    ];
 
     const rows = sourceRows.map(row => ({
         Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
@@ -762,7 +794,7 @@ function exportWmosExcel() {
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
         { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
-        { Field: 'Current Snapshot', Value: 'All five WMOS measurements combined into one row' },
+        { Field: 'Current Snapshot', Value: 'Five WMOS measurements shown as five separate rows' },
         { Field: 'Historical Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
