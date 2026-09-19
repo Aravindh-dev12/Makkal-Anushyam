@@ -88,7 +88,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     <div class="min-w-0">
                         <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Today Data</p>
                         <h1 class="text-2xl font-black text-slate-900" id="trendHeading">Live Source Trend</h1>
-                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS / WMAS source.</p>
+                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS source.</p>
                     </div>
                     <div class="ml-auto flex flex-wrap items-end gap-2 w-full xl:w-auto">
                         <label class="text-xs font-bold text-slate-500 min-w-[260px]">
@@ -96,7 +96,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                             <select id="analyticsSourceSelect" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Select Inverter / WMOS</option>
                                 <optgroup id="inverterGroup" label="Inverters"></optgroup>
-                                <option value="wmos:all">WMOS / WMAS - All Weather Data</option>
+                                <option value="wmos:all">WMOS - All Weather Data</option>
                             </select>
                         </label>
                         <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -130,7 +130,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             <section id="wmosSection" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5 hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
-                        <h2 class="text-lg font-black text-slate-900">WMOS / WMAS - All Live Weather Data</h2>
+                        <h2 class="text-lg font-black text-slate-900">WMOS - All Live Weather Data</h2>
                         <p class="text-xs text-slate-500">One common source. Radiation, panel temperature, ambient temperature, wind speed and humidity come from their exact WMOS devices and fields.</p>
                     </div>
                     <div class="text-right">
@@ -168,8 +168,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 </div>
 
                 <div class="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
-                    <p class="text-xs font-bold text-slate-600">Live WMOS / WMAS values only.</p>
-                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS / WMAS samples.</p>
+                    <p class="text-xs font-bold text-slate-600">Live WMOS values only.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS samples.</p>
                 </div>
             </section>
         </div>
@@ -419,6 +419,48 @@ function mergeWmosSample(metric, value, sourceTime, device) {
     if (state.wmosHistory.length > 5000) state.wmosHistory.splice(0, state.wmosHistory.length - 5000);
 }
 
+function mergeStoredWmosRows(rows) {
+    (rows || []).forEach(row => {
+        const timestamp = telemetryDate(row.recorded_at || row.timestamp).getTime();
+        if (!Number.isFinite(timestamp)) return;
+        const minute = minuteKey(timestamp);
+        let target = state.wmosHistory.find(item => item.minute === minute);
+        if (!target) {
+            target = { minute, timestamp };
+            state.wmosHistory.push(target);
+        }
+        target.timestamp = Math.max(target.timestamp, timestamp);
+        ['radiation', 'panelTemp', 'ambientTemp', 'windSpeed', 'humidity'].forEach(metric => {
+            const value = parseNumber(row[metric]);
+            if (value !== null) {
+                target[metric] = value;
+                target[metric + '_device'] = row.device_name || WMOS_DEVICES[metric].device;
+                target[metric + '_sample_time'] = timestamp;
+            }
+        });
+    });
+    state.wmosHistory.sort((a, b) => a.timestamp - b.timestamp);
+    if (state.wmosHistory.length > 5000) state.wmosHistory.splice(0, state.wmosHistory.length - 5000);
+    const latest = state.wmosHistory[state.wmosHistory.length - 1];
+    if (latest) {
+        ['radiation', 'panelTemp', 'ambientTemp', 'windSpeed', 'humidity'].forEach(metric => {
+            if (latest[metric] !== undefined) state.wmos[metric] = latest[metric];
+        });
+        state.wmos.lastSampleAt = latest.timestamp;
+    }
+}
+
+async function loadStoredWmosData() {
+    try {
+        const response = await fetch('analytics_data.php?plant=' + encodeURIComponent(currentPlant) + '&date=' + encodeURIComponent(todayKey()), { cache: 'no-store', credentials: 'same-origin' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!payload || !payload.success) return;
+        mergeStoredWmosRows(payload.rows || []);
+        renderWmos();
+    } catch (_) {}
+}
+
 function consumeWmosFrame(values, device, task, sourceTime) {
     if (!hasWeatherTask(task)) return false;
     const metric = deviceToWmosMetric(device);
@@ -586,12 +628,12 @@ function renderMode() {
     inverterSection.classList.toggle('hidden', isWmos);
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
-        trendHeading.textContent = 'WMOS / WMAS - Live Data';
+        trendHeading.textContent = 'WMOS - Live Data';
         trendDescription.textContent = 'One common source showing all five live weather measurements. No WMOS graphs; use Download Live Excel for the received live samples.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
-        trendDescription.textContent = 'Choose an inverter or the single common WMOS / WMAS source.';
+        trendDescription.textContent = 'Choose an inverter or the single common WMOS source.';
         renderInverter();
     }
 }
@@ -679,7 +721,16 @@ function exportInverterExcel() {
     return xlsxWorkbook('Inverter Live Data', rows, summary);
 }
 
-function exportWmosExcel() {
+async function exportWmosExcel() {
+    try {
+        const response = await fetch('analytics_data.php?plant=' + encodeURIComponent(currentPlant) + '&date=' + encodeURIComponent(todayKey()) + '&export=1', { cache: 'no-store', credentials: 'same-origin' });
+        if (response.ok) {
+            const payload = await response.json();
+            if (payload?.success && Array.isArray(payload.rows) && payload.rows.length) {
+                mergeStoredWmosRows(payload.rows);
+            }
+        }
+    } catch (_) {}
     const sourceRows = state.wmosHistory.slice().sort((a, b) => a.timestamp - b.timestamp);
     if (!sourceRows.length) return false;
     const rows = sourceRows.map(row => ({
@@ -699,8 +750,8 @@ function exportWmosExcel() {
     }));
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: 'WMOS / WMAS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Live WebSocket WMOS/WMAS data received by Analytics' },
+        { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
+        { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
         { Field: 'Actual Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
@@ -717,7 +768,7 @@ async function downloadSelectedExcel() {
         if (selectedSource === 'wmos:all') {
             requestDailyWmos();
             await waitForExportData(() => state.wmosHistory.length > 0);
-            if (!exportWmosExcel()) alert('No live WMOS/WMAS samples are available yet.');
+            if (!(await exportWmosExcel())) alert('No live WMOS samples are available yet.');
         } else {
             state.selectedInverter = selectedSource;
             requestDailyInverter();
@@ -802,8 +853,10 @@ function updateAll() {
 
 initCharts();
 seedConfiguredInverters();
+loadStoredWmosData();
 renderMode();
 connectWebSocket();
+setInterval(loadStoredWmosData, 5000);
 setInterval(updateAll, 1000);
 </script>
 </body>
