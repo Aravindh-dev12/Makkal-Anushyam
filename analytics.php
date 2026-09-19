@@ -564,7 +564,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const messageTask = message.task || message.pageName || message.type || '';
             const baseDevice = message.device || message.deviceName || message.sensor || message.name || '';
             const weatherContext = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance|anemometer|wind\s*speed|wind\s*velocity/i.test(String(messageTask) + ' ' + String(baseDevice));
-            if (messageUnit && messageUnit !== wsUnitId && !weatherContext) return;
+            if (messageUnit && messageUnit !== wsUnitId) return;
             if (weatherContext && messageUnit) liveWmasUnitId = messageUnit;
             const defaultTime = message.time || message.timestamp || message.ts || message.recorded_at || '';
             let updated = false;
