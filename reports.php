@@ -374,6 +374,13 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 metric = 'hum';
                 const key = Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalizeKey(k)));
                 raw = key ? values[key] : null;
+            } else if (taskStr === 'wmos') {
+                const normalizedKeys = Object.keys(values).map(normalizeKey);
+                if (normalizedKeys.includes('raw data') || normalizedKeys.includes('radiation')) { metric = 'rad'; raw = values[Object.keys(values).find(k => normalizeKey(k) === 'raw data') || Object.keys(values).find(k => normalizeKey(k) === 'radiation')]; }
+                else if (normalizedKeys.includes('pannel temperature') || normalizedKeys.includes('panel temperature') || normalizedKeys.includes('module temperature')) { metric = 'ptemp'; raw = values[Object.keys(values).find(k => ['pannel temperature','panel temperature','module temperature'].includes(normalizeKey(k)))]; }
+                else if (normalizedKeys.includes('ambient temperature')) { metric = 'atemp'; raw = values[Object.keys(values).find(k => normalizeKey(k) === 'ambient temperature')]; }
+                else if (normalizedKeys.includes('windspeed') || normalizedKeys.includes('wind speed')) { metric = 'wind'; raw = values[Object.keys(values).find(k => ['windspeed','wind speed'].includes(normalizeKey(k)))]; }
+                else if (normalizedKeys.includes('humidity') || normalizedKeys.includes('relative humidity')) { metric = 'hum'; raw = values[Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalizeKey(k)))]; }
             } else {
                 return false;
             }
