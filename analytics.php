@@ -185,12 +185,9 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div class="border border-slate-200 rounded-xl p-4 h-[300px]"><p class="text-xs font-black text-slate-600 mb-2">Radiation Trend</p><canvas id="wmRadChart"></canvas></div>
-                    <div class="border border-slate-200 rounded-xl p-4 h-[300px]"><p class="text-xs font-black text-slate-600 mb-2">Panel Temperature Trend</p><canvas id="wmPanelChart"></canvas></div>
-                    <div class="border border-slate-200 rounded-xl p-4 h-[300px]"><p class="text-xs font-black text-slate-600 mb-2">Ambient Temperature Trend</p><canvas id="wmAmbientChart"></canvas></div>
-                    <div class="border border-slate-200 rounded-xl p-4 h-[300px]"><p class="text-xs font-black text-slate-600 mb-2">Wind Speed Trend</p><canvas id="wmWindChart"></canvas></div>
-                    <div class="border border-slate-200 rounded-xl p-4 h-[300px] lg:col-span-2"><p class="text-xs font-black text-slate-600 mb-2">Humidity Trend</p><canvas id="wmHumidityChart"></canvas></div>
+                <div class="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
+                    <p class="text-xs font-bold text-slate-600">Live WMOS / WMAS values only.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS / WMAS samples.</p>
                 </div>
             </section>
         </div>
@@ -564,11 +561,6 @@ function initChart(canvasId, label, unit) {
 
 function initCharts() {
     inverterChart = initChart('inverterChart', 'Output', 'kW');
-    wmosCharts.radiation = initChart('wmRadChart', 'Radiation', 'W/m²');
-    wmosCharts.panelTemp = initChart('wmPanelChart', 'Panel Temp', '°C');
-    wmosCharts.ambientTemp = initChart('wmAmbientChart', 'Ambient Temp', '°C');
-    wmosCharts.windSpeed = initChart('wmWindChart', 'Wind Speed', 'm/s');
-    wmosCharts.humidity = initChart('wmHumidityChart', 'Humidity', '%RH');
 }
 
 function renderInverter() {
@@ -597,16 +589,6 @@ function renderWmos() {
     document.getElementById('wmWind').textContent = formatWmosValue('windSpeed', state.wmos.windSpeed);
     document.getElementById('wmHumidity').textContent = formatWmosValue('humidity', state.wmos.humidity);
     document.getElementById('wmosLastTime').textContent = state.wmos.lastSampleAt ? new Date(state.wmos.lastSampleAt).toLocaleTimeString('en-IN', { hour12: false }) : '--';
-
-    const metrics = Object.keys(WMOS_DEVICES);
-    metrics.forEach(metric => {
-        const chart = wmosCharts[metric];
-        if (!chart) return;
-        const rows = state.wmosHistory;
-        chart.data.labels = rows.map(row => new Date(row.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
-        chart.data.datasets[0].data = rows.map(row => row[metric] ?? null);
-        chart.update('none');
-    });
 }
 
 function updateCards() {
@@ -631,8 +613,8 @@ function renderMode() {
     inverterSection.classList.toggle('hidden', isWmos);
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
-        trendHeading.textContent = 'WMOS / WMAS - All Data';
-        trendDescription.textContent = 'One common source showing all five live weather measurements and a single combined workbook export.';
+        trendHeading.textContent = 'WMOS / WMAS - Live Data';
+        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMOS graphs; use Download Live Excel for the received live samples.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
