@@ -83,7 +83,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         </header>
 
         <div class="p-4 sm:p-6 lg:p-8 w-full max-w-[1920px] mx-auto flex flex-col gap-6">
-            <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                     <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Performance</p>
                     <p id="perfVal" class="text-3xl font-black text-slate-900 mt-2">--%</p>
@@ -93,11 +93,6 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Yield</p>
                     <p id="yieldVal" class="text-3xl font-black text-slate-900 mt-2">-- kWh</p>
                     <p class="text-xs text-slate-500 mt-1">Live daily energy</p>
-                </div>
-                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Availability</p>
-                    <p id="availVal" class="text-3xl font-black text-slate-900 mt-2">--%</p>
-                    <p class="text-xs text-slate-500 mt-1">Inverters with current telemetry</p>
                 </div>
             </section>
 
