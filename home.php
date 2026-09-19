@@ -691,6 +691,8 @@ const today = localDateKey();
 
                     if (d.unit_id !== currentPlant) return;
 
+                    const taskStr = String(d.task || d.pageName || d.type || '').toLowerCase();
+                    const deviceStr = String(d.device || d.deviceName || d.sensor || '').toLowerCase();
                     const keys = d.values ? Object.keys(d.values) : [];
                     const isVcbMessage = taskStr === 'vcb' || deviceStr.includes('vcb');
                     const isTransformerMessage = taskStr === 'transformer' || deviceStr.includes('transformer');
