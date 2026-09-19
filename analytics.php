@@ -776,7 +776,9 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     normalizeWsRows(message).forEach(row=>{
                         const device=row.device||message.device||message.deviceName||'';
                         if(!isInverterDeviceName(device))return;
+                        ensureInverter(device);
                         if(applyInverterReading(device,row.values,row.time||''))updated=true;
+                        populateAnalyticsInverterOptions();
                     });
                     if(updated){updateAnalyticsCards();renderOutputTrend();}
                 } catch(err){}
