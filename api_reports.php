@@ -35,7 +35,8 @@ try {
 class SimpleWSClient {
     private $socket;
     public function connect($host, $port) {
-        $this->socket = @fsockopen($host, $port, $errno, $errstr, 3);
+        $address = ($port === 5001 ? 'ssl://' : '') . $host;
+        $this->socket = @fsockopen($address, $port, $errno, $errstr, 3);
         if (!$this->socket) return false;
         stream_set_timeout($this->socket, 10);
         stream_set_blocking($this->socket, false);
