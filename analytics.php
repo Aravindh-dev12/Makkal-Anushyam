@@ -468,7 +468,12 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
         function setWmosPanelValue(elementId, value, decimals) {
             const el = document.getElementById(elementId);
-            if (!el || value === null || value === undefined || !Number.isFinite(Number(value))) return false;
+            if (!el) return false;
+            if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+                el.textContent = '--';
+                el.dataset.live = 'false';
+                return false;
+            }
             el.textContent = Number(value).toFixed(decimals);
             el.dataset.live = 'true';
             return true;
