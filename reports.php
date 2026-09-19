@@ -315,7 +315,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
 
         const wsUrl = <?php echo json_encode($wsUrl); ?>;
-        let liveWeather = { rad: null, ptemp: null, atemp: null, wind: null, hum: null, lastAt: 0 };
+        let liveWmasUnitId = '';
+        let liveWeather = { rad: null, ptemp: null, atemp: null, wind: null, hum: null, lastAt: 0, lastSampleAt: 0 };
         let weatherBuckets = {};
 
         function slot15Min(timeStr) {
@@ -328,40 +329,68 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return h + ':' + String(roundedM).padStart(2, '0');
         }
 
-        function normalizeWeatherValue(value) {
-            if (value === null || value === undefined || value === '') return null;
-            const raw = typeof value === 'object'
-                ? (value.value ?? value.val ?? value.reading ?? value.data ?? null)
-                : value;
-            const n = parseFloat(String(raw).replace(/,/g, ''));
+        function normalizeWeatherValue(value, depth = 0) {
+            if (value === null || value === undefined || value === '' || depth > 5) return null;
+            if (typeof value === 'object') {
+                for (const key of ['value','val','reading','data','result','current','last']) {
+                    if (Object.prototype.hasOwnProperty.call(value, key)) {
+                        const n = normalizeWeatherValue(value[key], depth + 1);
+                        if (n !== null) return n;
+                    }
+                }
+                return null;
+            }
+            const n = parseFloat(String(value).replace(/,/g, ''));
             return Number.isFinite(n) ? n : null;
         }
 
-        function captureLiveWeatherValues(values, device, task, sourceTime) {
-            if (!values || typeof values !== 'object') return false;
+        function captureLiveWeatherValues(values, device, task, sourceTime, unitId = '') {
+            if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
             const dev = String(device || '').toLowerCase();
             const taskStr = String(task || '').toLowerCase();
-            const weatherSignal = taskStr.includes('wmos') || taskStr.includes('wmas') || taskStr.includes('weather') ||
-                /pyran|pannel|panel|ambient|wind|humid/.test(dev);
+            const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+            const weatherSignal = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/.test(dev + ' ' + taskStr) ||
+                Object.keys(values).map(normalizeKey).some(k => /pyran|radiat|irradiance|pannel.*temp|panel.*temp|module.*temp|ambient.*temp|wind.*speed|humidity/.test(k));
             if (!weatherSignal) return false;
 
-            let updated = false;
-            Object.entries(values).forEach(([key, raw]) => {
-                const kl = String(key).toLowerCase().replace(/[_-]+/g, ' ');
-                const val = normalizeWeatherValue(raw);
-                if (val === null) return;
-                if (/rad|irradiance|raw data/.test(kl) || /pyran/.test(dev)) { liveWeather.rad = val; updated = true; }
-                else if (/pannel|panel|module/.test(kl) || /pannel|panel/.test(dev)) { liveWeather.ptemp = val; updated = true; }
-                else if (/ambient/.test(kl) || /ambient/.test(dev)) { liveWeather.atemp = val; updated = true; }
-                else if (/wind|speed/.test(kl) || /wind/.test(dev)) { liveWeather.wind = val; updated = true; }
-                else if (/humid/.test(kl) || /humid/.test(dev)) { liveWeather.hum = val; updated = true; }
-            });
-            if (updated) {
-                liveWeather.lastAt = Date.now();
-                if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' &&
-                    dateInput.value === localDateKey()) {
-                    renderWmasLiveRow();
+            const read = (direct, patterns = []) => {
+                const wanted = direct.map(normalizeKey);
+                for (const [key, raw] of Object.entries(values)) {
+                    const norm = normalizeKey(key);
+                    if (wanted.includes(norm)) { const n = normalizeWeatherValue(raw); if (n !== null) return n; }
                 }
+                for (const [key, raw] of Object.entries(values)) {
+                    const norm = normalizeKey(key);
+                    if (patterns.some(rx => rx.test(norm))) { const n = normalizeWeatherValue(raw); if (n !== null) return n; }
+                }
+                return null;
+            };
+
+            let rad = read(['raw data','radiation','solar radiation','irradiance'], [/^raw data$/,/radiation/,/irradiance/,/pyran/]);
+            let panel = read(['pannel temperature','panel temperature','module temperature'], [/pannel.*temp/,/panel.*temp/,/module.*temp/,/^temperature$/,/^temp$/,/^temp data$/]);
+            let ambient = read(['ambient temperature'], [/ambient.*temp/]);
+            let wind = read(['windspeed','wind speed'], [/wind.*speed/,/^windspeed$/,/^wind$/]);
+            let hum = read(['humidity','relative humidity'], [/humidity/]);
+
+            if (panel === null && /pannel|panel|module/.test(dev)) panel = read([], [/temp/]);
+            if (ambient === null && /ambient/.test(dev)) ambient = read([], [/temp/]);
+            if (wind === null && /wind/.test(dev)) wind = read([], [/wind|speed/]);
+            if (hum === null && /humid/.test(dev)) hum = read([], [/hum/]);
+
+            let updated = false;
+            if (rad !== null) liveWeather.rad = rad;
+            if (panel !== null) liveWeather.ptemp = panel;
+            if (ambient !== null) liveWeather.atemp = ambient;
+            if (wind !== null) liveWeather.wind = wind;
+            if (hum !== null) liveWeather.hum = hum;
+            if (rad !== null || panel !== null || ambient !== null || wind !== null || hum !== null) {
+                updated = true;
+                liveWeather.lastAt = Date.now();
+                liveWeather.lastSampleAt = sourceTime ? new Date(sourceTime).getTime() || Date.now() : Date.now();
+                if (unitId) liveWmasUnitId = unitId;
+            }
+            if (updated && currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
+                renderWmasLiveRow();
             }
             return updated;
         }
@@ -436,39 +465,58 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 ws = new WebSocket(wsUrl);
                 ws.onopen = () => {
                     wsConnected = true;
-                    ws.send(JSON.stringify({ type: 'subscribe', unit_id: 'vinoba-velliyanai' }));
-                    const curP = plantSelect.value || 'vinoba-velliyanai';
-                    if (curP !== 'vinoba-velliyanai') ws.send(JSON.stringify({ type: 'subscribe', unit_id: curP }));
-                    if (pendingReportRequest && currentReportSection === 'inverter') sendReportRequest();
-                    if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily') requestWmasDailyHistory();
+                    const plant = plantSelect.value || 'vinoba-velliyanai';
+                    ws.send(JSON.stringify({ type: 'subscribe', unit_id: plant }));
+                    ws.send(JSON.stringify({ type: 'get_devices', unit_id: plant }));
+                    if (currentReportSection === 'inverter') {
+                        if (pendingReportRequest) sendReportRequest();
+                    } else if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily') {
+                        requestWmasDailyHistory();
+                    }
                 };
                 ws.onmessage = (e) => {
                     try {
                         const d = JSON.parse(e.data);
-                        const taskStr = String(d.task || d.pageName || '').toLowerCase();
-                        const devStr = String(d.device || d.deviceName || '').toLowerCase();
+                        const messageUnit = d.unit_id || d.request?.unit_id || d.unitId || d.request?.unitId || '';
+                        const task = d.task || d.pageName || d.type || '';
+                        const device = d.device || d.deviceName || d.sensor || '';
 
-                        // Always capture real WMAS/WMOS telemetry before any unit filtering.
-                        if (d.values && typeof d.values === 'object') {
-                            captureLiveWeatherValues(d.values, d.device || d.deviceName || '', d.task || d.pageName || '', d.time || d.timestamp || d.ts || '');
-                        }
-                        if (Array.isArray(d.data)) {
-                            d.data.forEach(row => {
-                                if (!row || typeof row !== 'object') return;
-                                const rowValues = row.values && typeof row.values === 'object' ? row.values : row;
-                                captureLiveWeatherValues(rowValues, row.device || row.deviceName || d.device || '', row.task || row.pageName || d.task || '', row.time || row.timestamp || row.ts || d.time || '');
-                            });
+                        const consumeWeather = (values, dev, tsk, time, unit) => {
+                            captureLiveWeatherValues(values, dev, tsk, time, unit);
+                        };
+                        consumeWeather(d.values, device, task, d.time || d.timestamp || d.ts || '', messageUnit);
+
+                        const data = d.data;
+                        const rows = Array.isArray(data) ? data : (data && typeof data === 'object' ? [data] : []);
+                        rows.forEach(row => {
+                            if (!row || typeof row !== 'object') return;
+                            const rowUnit = row.unit_id || row.unitId || messageUnit || '';
+                            const rowDevice = row.device || row.deviceName || row.sensor || row.name || device;
+                            const rowTask = row.task || row.pageName || row.type || task;
+                            const rowTime = row.time || row.timestamp || row.ts || row.recorded_at || d.time || d.timestamp || '';
+                            const rowValues = row.values && typeof row.values === 'object' && !Array.isArray(row.values)
+                                ? row.values
+                                : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+                                    ? row.data
+                                    : row;
+                            consumeWeather(rowValues, rowDevice, rowTask, rowTime, rowUnit);
+                        });
+
+                        for (const containerKey of ['payload','result']) {
+                            const container = d[containerKey];
+                            if (!container || typeof container !== 'object' || Array.isArray(container)) continue;
+                            consumeWeather(container.values, container.device || container.deviceName || device, container.task || container.pageName || task, container.time || container.timestamp || d.time || '', container.unit_id || container.unitId || messageUnit || '');
                         }
 
-                        if (d.type === 'daily_data_result' && Array.isArray(d.data)) {
-                            handleWSDailyWeather(d.data, d.device || d.deviceName || '', d.task || d.pageName || '');
+                        if (d.type === 'daily_data_result') {
+                            handleWSDailyWeather(Array.isArray(d.data) ? d.data : [], d.device || d.deviceName || device, d.task || d.pageName || task);
                             return;
                         }
 
                         if (currentReportSection === 'inverter') {
                             const reportTypes = ['report_data','generate_report','generate_report_result','report','report_result','report_generated'];
-                            if (reportTypes.includes(d.type) || d.columns || d.rows) handleWSReportResponse(d);
-                        } else if (currentReportSection === 'wmas' && d.values) {
+                            if ((reportTypes.includes(d.type) || d.columns || d.rows) && (!messageUnit || messageUnit === (plantSelect.value || 'vinoba-velliyanai'))) handleWSReportResponse(d);
+                        } else if (currentReportSection === 'wmas' && /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(task) + ' ' + String(device))) {
                             renderWmasLiveRow();
                         }
                     } catch(err) {
@@ -480,14 +528,16 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             } catch(err) { console.error('WS connect failed', err); }
         }
 
-
         function requestWmasDailyHistory() {
             if (!ws || ws.readyState !== WebSocket.OPEN) return false;
             const selectedDate = dateInput.value;
+            const plant = plantSelect.value || 'vinoba-velliyanai';
+            const units = [liveWmasUnitId || plant];
+            if (!units.includes(plant)) units.push(plant);
             const weatherDevs = ['Pyranometer', 'pannel temperature', 'Ambient Temperature', 'Wind', 'Humidity'];
-            weatherDevs.forEach(dev => {
-                ws.send(JSON.stringify({ type: 'get_daily_data', unit_id: 'vinoba-velliyanai', device: dev, date: selectedDate }));
-            });
+            units.forEach(unit => weatherDevs.forEach(dev => {
+                ws.send(JSON.stringify({ type: 'get_daily_data', unit_id: unit, device: dev, date: selectedDate }));
+            }));
             return true;
         }
 
@@ -855,6 +905,12 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         loadSidebar();
         toggleInputs();
         toggleReportSection();
+
+        setInterval(() => {
+            if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
+                renderWmasLiveRow();
+            }
+        }, 1000);
 
         window.addEventListener('beforeunload', () => { stopAutoRefresh(); if (ws) ws.close(); });
     </script>
