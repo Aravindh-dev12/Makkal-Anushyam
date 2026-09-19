@@ -25,7 +25,7 @@
             <header class="bg-white p-4 sm:px-6 flex justify-between items-center sticky top-0 z-20 border-b border-slate-200 shadow-sm">
                 <div class="flex items-center gap-3">
                     <?php if (($user['role'] ?? '') === 'admin') { ?>
-                    <a href="admin.php<?php echo !empty($token) ? '?token='.urlencode($token) : ''; ?>" class="flex items-center gap-2 px-3 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition" title="Back to Plants"><i class="fa-solid fa-arrow-left"></i><span class="text-sm font-bold hidden sm:inline">Back to Dashboard</span></a>
+                    <a href="./admin.php<?php echo !empty($token) ? '?token='.urlencode($token) : ''; ?>" onclick="window.location.href=this.href; return false;" class="flex items-center gap-2 px-3 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition" title="Back to Plants"><i class="fa-solid fa-arrow-left"></i><span class="text-sm font-bold hidden sm:inline">Back to Dashboard</span></a>
                     <?php } ?>
                     <button id="menuBtn" class="md:hidden text-emerald-600 text-2xl focus:outline-none">&#9776;</button>
                     <div><h2 class="text-xl font-black text-slate-800 tracking-tight">Live Plant Telemetry</h2></div>
