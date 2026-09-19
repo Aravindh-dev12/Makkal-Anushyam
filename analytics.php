@@ -90,7 +90,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                         <h1 class="text-2xl font-black text-slate-900" id="trendHeading">Live Source Trend</h1>
                         <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS source.</p>
                     </div>
-                    <div class="ml-auto flex flex-wrap items-end gap-2 w-full xl:w-auto">
+                    <div class="ml-auto flex flex-col sm:flex-row sm:items-end gap-2 w-full xl:w-auto">
                         <label class="text-xs font-bold text-slate-500 min-w-[260px]">
                             <span class="block mb-1">Live Data Source</span>
                             <select id="analyticsSourceSelect" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
@@ -99,7 +99,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                                 <option value="wmos:all">WMOS - All Weather Data</option>
                             </select>
                         </label>
-                        <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
                             <i class="fa-solid fa-file-excel"></i>
                             <span>Download Live Excel</span>
                         </button>
@@ -811,15 +811,21 @@ async function downloadSelectedExcel() {
 
 sourceSelect.addEventListener('change', () => {
     selectedSource = sourceSelect.value || '';
+
+    // Switch the visible panel first so WMOS data is shown immediately.
+    // Network requests happen after the UI mode changes and never replace
+    // or move the Download Live Excel button.
     if (selectedSource === 'wmos:all') {
         state.selectedInverter = '';
+        renderMode();
+        updateGenerateButton();
         requestDailyWmos();
     } else {
         state.selectedInverter = selectedSource;
+        renderMode();
+        updateGenerateButton();
         requestDailyInverter();
     }
-    renderMode();
-    updateGenerateButton();
 });
 
 generateButton.addEventListener('click', downloadSelectedExcel);
