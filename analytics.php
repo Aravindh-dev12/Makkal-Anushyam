@@ -680,20 +680,34 @@ function exportInverterExcel() {
 
     // Always put the exact latest live reading first in its own sheet.
     // This prevents the Excel download from looking like a historical-only report.
-    const snapshot = [{
-        Date: new Date().toLocaleDateString('en-IN'),
-        Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-        Inverter: selected?.wsName || state.selectedInverter,
-        'Output (kW)': selected?.outputKw == null ? '' : Number(selected.outputKw).toFixed(3),
-        'Daily Energy (kWh)': selected?.dailyGen == null ? '' : Number(selected.dailyGen).toFixed(3),
-        'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
-    }];
+    const exportTime = new Date();
+    const snapshot = [
+        {
+            Date: exportTime.toLocaleDateString('en-IN'),
+            Time: exportTime.toLocaleTimeString('en-IN', { hour12: false }),
+            Inverter: selected?.wsName || state.selectedInverter,
+            Parameter: 'Output Power',
+            Value: selected?.outputKw == null ? '' : Number(selected.outputKw).toFixed(3),
+            Unit: 'kW',
+            'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
+        },
+        {
+            Date: exportTime.toLocaleDateString('en-IN'),
+            Time: exportTime.toLocaleTimeString('en-IN', { hour12: false }),
+            Inverter: selected?.wsName || state.selectedInverter,
+            Parameter: 'Daily Energy',
+            Value: selected?.dailyGen == null ? '' : Number(selected.dailyGen).toFixed(3),
+            Unit: 'kWh',
+            'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
+        }
+    ];
 
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: selected?.wsName || state.selectedInverter },
         { Field: 'Export Type', Value: 'Live WebSocket data received by Analytics' },
         { Field: 'Latest Live Reading', Value: selected?.lastSeen ? new Date(selected.lastSeen).toLocaleString('en-IN', { hour12: false }) : 'Not received' },
+        { Field: 'Current Snapshot', Value: 'Latest inverter values shown as separate parameter rows' },
         { Field: 'Historical Live Samples', Value: rows.length },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
