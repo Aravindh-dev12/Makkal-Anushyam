@@ -236,7 +236,14 @@ const state = {
         windSpeed: null,
         humidity: null,
         lastReceivedAt: 0,
-        lastSampleAt: 0
+        lastSampleAt: 0,
+        sampleTimes: {
+            radiation: 0,
+            panelTemp: 0,
+            ambientTemp: 0,
+            windSpeed: 0,
+            humidity: 0
+        }
     },
     wmosHistory: []
 };
@@ -405,6 +412,7 @@ function mergeWmosSample(metric, value, sourceTime, device) {
     state.wmos[metric] = value;
     state.wmos.lastReceivedAt = Date.now();
     state.wmos.lastSampleAt = timestamp;
+    state.wmos.sampleTimes[metric] = timestamp;
     const minute = minuteKey(timestamp);
     let row = state.wmosHistory.find(item => item.minute === minute);
     if (!row) {
@@ -678,27 +686,27 @@ function exportInverterExcel() {
         };
     });
 
-    // Always put the exact latest live reading first in its own sheet.
-    // This prevents the Excel download from looking like a historical-only report.
-    const exportTime = new Date();
+    // Export the actual newest telemetry sample time, not the button-click time.
+    // Output power and daily energy are kept as separate rows.
+    const liveTime = selected?.lastSeen ? new Date(selected.lastSeen) : new Date();
     const snapshot = [
         {
-            Date: exportTime.toLocaleDateString('en-IN'),
-            Time: exportTime.toLocaleTimeString('en-IN', { hour12: false }),
+            Date: liveTime.toLocaleDateString('en-IN'),
+            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
             Inverter: selected?.wsName || state.selectedInverter,
             Parameter: 'Output Power',
             Value: selected?.outputKw == null ? '' : Number(selected.outputKw).toFixed(3),
             Unit: 'kW',
-            'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
+            'Sample Status': selected?.lastSeen ? 'Fresh live WebSocket value' : 'No live value received'
         },
         {
-            Date: exportTime.toLocaleDateString('en-IN'),
-            Time: exportTime.toLocaleTimeString('en-IN', { hour12: false }),
+            Date: liveTime.toLocaleDateString('en-IN'),
+            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
             Inverter: selected?.wsName || state.selectedInverter,
             Parameter: 'Daily Energy',
             Value: selected?.dailyGen == null ? '' : Number(selected.dailyGen).toFixed(3),
             Unit: 'kWh',
-            'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
+            'Sample Status': selected?.lastSeen ? 'Fresh live WebSocket value' : 'No live value received'
         }
     ];
 
@@ -734,56 +742,22 @@ function exportInverterExcel() {
 function exportWmosExcel() {
     const sourceRows = state.wmosHistory.slice().sort((a, b) => a.timestamp - b.timestamp);
 
-    // One row containing all five WMOS measurements at the moment of download.
-    // Each metric keeps its own sample time because the five devices can report
-    // a few seconds apart.
-    const snapshot = [
-        {
-            Date: new Date().toLocaleDateString('en-IN'),
-            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': 'Radiation',
-            Device: WMOS_DEVICES.radiation.device,
-            Value: state.wmos.radiation ?? '',
-            Unit: WMOS_DEVICES.radiation.unit,
-            'Reading Type': 'Current live value'
-        },
-        {
-            Date: new Date().toLocaleDateString('en-IN'),
-            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': 'Panel Temperature',
-            Device: WMOS_DEVICES.panelTemp.device,
-            Value: state.wmos.panelTemp ?? '',
-            Unit: WMOS_DEVICES.panelTemp.unit,
-            'Reading Type': 'Current live value'
-        },
-        {
-            Date: new Date().toLocaleDateString('en-IN'),
-            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': 'Ambient Temperature',
-            Device: WMOS_DEVICES.ambientTemp.device,
-            Value: state.wmos.ambientTemp ?? '',
-            Unit: WMOS_DEVICES.ambientTemp.unit,
-            'Reading Type': 'Current live value'
-        },
-        {
-            Date: new Date().toLocaleDateString('en-IN'),
-            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': 'Wind Speed',
-            Device: WMOS_DEVICES.windSpeed.device,
-            Value: state.wmos.windSpeed ?? '',
-            Unit: WMOS_DEVICES.windSpeed.unit,
-            'Reading Type': 'Current live value'
-        },
-        {
-            Date: new Date().toLocaleDateString('en-IN'),
-            Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': 'Humidity',
-            Device: WMOS_DEVICES.humidity.device,
-            Value: state.wmos.humidity ?? '',
-            Unit: WMOS_DEVICES.humidity.unit,
-            'Reading Type': 'Current live value'
-        }
-    ];
+    // Export each WMOS sensor on its own row using that sensor's actual
+    // latest telemetry timestamp. The five devices may report seconds apart.
+    const snapshot = Object.keys(WMOS_DEVICES).map(metric => {
+        const info = WMOS_DEVICES[metric];
+        const sampleTime = state.wmos.sampleTimes[metric] || state.wmos.lastSampleAt || Date.now();
+        const liveTime = new Date(sampleTime);
+        return {
+            Date: liveTime.toLocaleDateString('en-IN'),
+            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
+            'WMOS Data': info.label,
+            Device: info.device,
+            Value: state.wmos[metric] == null ? '' : Number(state.wmos[metric]).toFixed(info.decimals),
+            Unit: info.unit,
+            'Reading Type': state.wmos.sampleTimes[metric] ? 'Fresh live WebSocket value' : 'No live value received'
+        };
+    });
 
     const rows = sourceRows.map(row => ({
         Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
@@ -837,16 +811,26 @@ async function downloadSelectedExcel() {
     if (!selectedSource) return;
     const old = generateButton.innerHTML;
     generateButton.disabled = true;
-    generateButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Preparing live data...</span>';
+    generateButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Waiting for fresh live data...</span>';
     try {
         if (selectedSource === 'wmos:all') {
+            const before = Object.fromEntries(
+                Object.keys(WMOS_DEVICES).map(metric => [metric, state.wmos.sampleTimes[metric] || 0])
+            );
             requestDailyWmos();
-            await waitForExportData(() => state.wmosHistory.length > 0);
+            await waitForExportData(() =>
+                Object.keys(WMOS_DEVICES).some(metric =>
+                    (state.wmos.sampleTimes[metric] || 0) > before[metric]
+                )
+            );
             if (!exportWmosExcel()) alert('No live WMOS samples are available yet.');
         } else {
             state.selectedInverter = selectedSource;
+            const before = state.inverters[state.selectedInverter]?.lastSeen || 0;
             requestDailyInverter();
-            await waitForExportData(() => selectedInverterHistory().length > 0);
+            await waitForExportData(() =>
+                (state.inverters[state.selectedInverter]?.lastSeen || 0) > before
+            );
             if (!exportInverterExcel()) alert('No live inverter samples are available yet.');
         }
     } finally {
