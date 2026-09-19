@@ -330,38 +330,12 @@ function insertWeather($conn, $unit, $d) {
     $wind = floatval($v['windspeed'] ?? ($v['wind speed'] ?? 0));
     $hum = floatval($v['humidity'] ?? ($v['Humidity'] ?? 0));
 
-    // Try full 5-column insert first
-    $stmt = @$conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, ambient_temp, wind_speed, humidity) VALUES (?,?,?,?,?,?)");
-    if ($stmt) {
-        $stmt->bind_param('sddddd', $unit, $rad, $ptemp, $atemp, $wind, $hum);
-        if (!$stmt->execute()) {
-            // If failed (e.g. unknown column), fallback to 3-column
-            $stmt3 = $conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, wind_speed) VALUES (?,?,?,?)");
-            if ($stmt3) {
-                $stmt3->bind_param('sddd', $unit, $rad, $ptemp, $wind);
-                $stmt3->execute();
-                $stmt3->close();
-            }
-        } else {
-            echo "[DB] Weather (full) inserted for $unit\n";
-        }
-        $stmt->close();
-    } else {
-        $stmt3 = $conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, wind_speed) VALUES (?,?,?,?)");
-        if ($stmt3) {
-            $stmt3->bind_param('sddd', $unit, $rad, $ptemp, $wind);
-            $stmt3->execute();
-            $stmt3->close();
-        }
-    }
-
-    // Also mirror to wms_readings if table exists
-    $stmtWms = @$conn->prepare("INSERT INTO wms_readings (plant_id, radiation, panel_temp, ambient_temp, wind_speed, humidity) VALUES (?,?,?,?,?,?)");
-    if ($stmtWms) {
-        $stmtWms->bind_param('sddddd', $unit, $rad, $ptemp, $atemp, $wind, $hum);
-        @$stmtWms->execute();
-        $stmtWms->close();
-    }
+    $stmt = $conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, ambient_temp, wind_speed, humidity) VALUES (?,?,?,?,?,?)");
+    if (!$stmt) { echo "[DB ERROR] WMOS prepare failed: " . $conn->error . "\n"; return; }
+    $stmt->bind_param('sddddd', $unit, $rad, $ptemp, $atemp, $wind, $hum);
+    if (!$stmt->execute()) echo "[DB ERROR] WMOS execute failed: " . $stmt->error . "\n";
+    else echo "[DB] WMOS inserted for $unit\n";
+    $stmt->close();
 }
 
 $lastTelemetryInsert = [];
@@ -465,7 +439,7 @@ while (true) {
         if (isset($json['values'])) {
             $keys = array_keys($json['values']);
             $kl = array_map('strtolower', $keys);
-            $isWeather = $task === 'wmos' || $task === 'weather' ||
+            $isWeather = $task === 'wmos' ||
                 strpos($device, 'pyranometer') !== false || strpos($device, 'pannel') !== false ||
                 strpos($device, 'ambient') !== false || strpos($device, 'wind') !== false || strpos($device, 'humidity') !== false ||
                 in_array('raw data', $kl) || in_array('pannel temperature', $kl) || in_array('ambient temperature', $kl) || in_array('windspeed', $kl) || in_array('humidity', $kl);
