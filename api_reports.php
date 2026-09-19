@@ -162,7 +162,10 @@ $frames = []; $start = time();
         if (!is_array($v) && isset($f['data']) && is_array($f['data'])) $v = $f['data'];
         $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
         $weatherSeen = [];
-        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance|anemometer|velocity|windspeed/i', $dev.' '.$task)) {
+        $frameUnit = trim((string)($f['unit_id'] ?? $f['unitId'] ?? ''));
+        $isWeatherTask = ($task === 'wmos' || $task === 'wmas' || $task === 'weather');
+        $isWeatherDevice = preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance|anemometer|velocity|windspeed/i', $dev.' '.$task);
+        if (($frameUnit === '' || $frameUnit === $plant) && ($isWeatherTask || $isWeatherDevice)) {
             walkLiveWeatherValues($f, [$dev, $task], $weather, $weatherSeen);
             foreach ($weather as $weatherKey => $weatherValue) {
                 if ($weatherValue !== null) $latest['wms'][$weatherKey] = $weatherValue;
