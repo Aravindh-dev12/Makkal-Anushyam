@@ -1,399 +1,563 @@
-<?php
-require 'check_auth.php';
-date_default_timezone_set('Asia/Kolkata');
-?>
+<?php require 'check_auth.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solar Plants - Live SLD</title>
-    <link rel="stylesheet" href="assets/app.css?v=20260802-1">
+    <title id="pageTitle">4MW Solar Power Plant - Single Line Diagram (SLD)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="sidebar-control.js?v=3" defer></script>
     <style>
-        html, body { min-height: 100%; }
-        body { background:#f1f5f9; color:#0f172a; }
-        .diagram-shell { width:100%; overflow:auto; }
-        .sld-svg { display:block; width:100%; height:auto; min-width:520px; }
-        .wire { stroke:#0f172a; stroke-width:3; fill:none; stroke-linecap:round; stroke-linejoin:round; }
-        .wire-live { stroke:#10b981; stroke-width:4; fill:none; stroke-linecap:round; stroke-linejoin:round; }
-        .symbol { stroke:#0f172a; stroke-width:2.5; fill:#fff; }
-        .label { font-family:Inter,Arial,sans-serif; fill:#0f172a; }
-        .mono { font-family:'JetBrains Mono',monospace; }
-        .value { font-family:'JetBrains Mono',monospace; font-weight:800; }
-        .muted { fill:#64748b; }
-        .live { fill:#059669; }
-        .warn { fill:#d97706; }
-        .state-on { fill:#059669; }
-        .state-off { fill:#64748b; }
-        .plant-title { font:900 22px Inter,Arial,sans-serif; letter-spacing:.04em; }
-        .section-title { font:800 11px Inter,Arial,sans-serif; letter-spacing:.12em; }
-        .component-title { font:900 11px Inter,Arial,sans-serif; }
-        .component-value { font:800 10px 'JetBrains Mono',monospace; }
-        .small-value { font:800 9px 'JetBrains Mono',monospace; }
-        .metric-title { font:800 9px Inter,Arial,sans-serif; fill:#475569; }
-        .metric-value { font:900 14px 'JetBrains Mono',monospace; fill:#0f172a; }
-        .status-dot { transition: fill .2s ease; }
-        @media (max-width: 900px) {
-            .sld-svg { min-width:460px; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+        /* Engineering drawing sheet matching reference drawing */
+        .sld-sheet {
+            background: #ffffff;
+            border: 2px solid #0f172a;
+        }
+        .section-row {
+            border-bottom: 1.5px dashed #2563eb;
+            position: relative;
+        }
+        .section-label {
+            position: absolute; left: 8px; top: 8px;
+            font-size: 11px; font-weight: 800; color: #1d4ed8;
+            line-height: 1.25; z-index: 2;
         }
     </style>
 </head>
-<body>
-<div class="min-h-screen flex relative">
-    <div id="overlay" class="fixed inset-0 bg-slate-900/40 hidden z-30 md:hidden"></div>
-    <div id="sidebar-container"></div>
-    <main class="flex-1 flex flex-col w-full md:ml-64 min-w-0">
-        <header class="bg-white px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-20 border-b border-slate-200 shadow-sm">
-            <div class="flex items-center gap-3 min-w-0">
-                <button id="menuBtn" class="md:hidden text-emerald-700 text-2xl">&#9776;</button>
-                <div class="min-w-0">
-                    <h1 class="text-xl font-black truncate">Single Line Diagram (SLD)</h1>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">Three plants · live SCADA schematic</p>
+<body class="h-full bg-slate-100 text-slate-900 font-sans">
+    <div class="min-h-screen flex relative">
+        <div id="overlay" class="fixed inset-0 bg-slate-900/40 hidden z-30 md:hidden transition-opacity"></div>
+        <div id="sidebar-container"></div>
+        <main class="flex-1 flex flex-col w-full md:ml-64 overflow-x-hidden min-h-screen bg-slate-100">
+            <!-- Top Header -->
+            <header class="bg-white p-3.5 sm:px-6 flex justify-between items-center sticky top-0 z-20 border-b border-slate-200 shadow-xs">
+                <div class="flex items-center gap-3">
+                    <button id="menuBtn" class="md:hidden text-emerald-700 text-2xl focus:outline-none">&#9776;</button>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-diagram-project text-emerald-600 text-lg"></i>
+                            <h2 class="text-lg font-black text-slate-900 tracking-tight">Single Line Diagram (SLD)</h2>
+                        </div>
+                        <p class="text-xs text-slate-500 hidden sm:block">Standard Electrical Schematic with Live SCADA Telemetry</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    
+                    <div class="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-xs">
+                        <div id="refreshPulse" class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
+                        <span class="font-bold text-slate-700 font-mono hidden sm:inline" id="clockDisplay">--:--:--</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- SLD Drawing Area -->
+            <div class="p-3 sm:p-5 w-full flex flex-col gap-4 max-w-[1900px] mx-auto">
+                <div class="sld-sheet rounded p-3 sm:p-4 overflow-x-auto">
+                    <div class="min-w-[1350px] flex flex-col">
+
+                        <!-- Title Bar (Red text matching reference drawing) -->
+                        <div class="text-center pb-2 border-b-2 border-slate-900 mb-3">
+                            <h1 class="text-xl sm:text-2xl font-black text-red-600 uppercase tracking-wide" id="sld_header_title">4MW SOLAR POWER PLANT</h1>
+                            <h2 class="text-xs sm:text-sm font-black text-red-600 uppercase tracking-wider mt-0.5">SINGLE LINE DIAGRAM (SLD)</h2>
+                        </div>
+
+                        <!-- Main Grid: Left Schematic (col-span-9) + Right Info (col-span-3) -->
+                        <div class="grid grid-cols-1 gap-3">
+
+                            <!-- LEFT: SCHEMATIC -->
+                            <div class="w-full flex flex-col select-none">
+
+                                <!-- SECTION 1: EB LINE 33kV -->
+                                <div class="section-row py-2 min-h-[130px] flex items-center">
+                                    <div class="section-label">1. EB LINE 33kV</div>
+                                    <div class="w-full flex items-center justify-center">
+                                        <div class="relative" style="width:520px;">
+                                            <!-- EB Incoming Label -->
+                                            <div class="text-center mb-1">
+                                                <span class="text-xs font-black text-slate-900 uppercase block">EB LINE INCOMING</span>
+                                                <span class="text-[10px] text-slate-700 font-mono font-bold">33kV, 50Hz</span>
+                                            </div>
+                                            <!-- Down arrow -->
+                                            <div class="flex justify-center">
+                                                <svg width="14" height="16"><path d="M7 0 L7 12 M3 8 L7 13 L11 8" stroke="#1e293b" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                                            </div>
+                                            <!-- Main vertical trunk with LA, PT on left and CT, MFM on right -->
+                                            <div class="flex items-start justify-center gap-16 mt-1">
+                                                <!-- Left: LA + PT -->
+                                                <div class="flex items-end gap-5">
+                                                    <!-- LA -->
+                                                    <div class="flex flex-col items-center cursor-pointer">
+                                                        <div class="w-9 h-9 border-2 border-slate-800 bg-white rounded flex items-center justify-center"><i class="fa-solid fa-bolt text-amber-600 text-xs"></i></div>
+                                                        <div class="w-px h-2 bg-slate-800"></div>
+                                                        <div class="flex flex-col items-center"><div class="w-3 h-px bg-slate-800"></div><div class="w-2 h-px bg-slate-800 mt-px"></div><div class="w-1 h-px bg-slate-800 mt-px"></div></div>
+                                                        <span class="text-[8px] font-black text-slate-800 mt-0.5">LA</span>
+                                                        <span class="text-[7px] text-slate-500 font-mono">33kV, 10kA</span>
+                                                    </div>
+                                                    <!-- PT -->
+                                                    <div class="flex flex-col items-center cursor-pointer">
+                                                        <div class="w-9 h-9 border-2 border-slate-800 bg-white rounded-full flex items-center justify-center">
+                                                            <svg width="20" height="20"><circle cx="7" cy="10" r="5" stroke="#1e293b" stroke-width="1.5" fill="none"/><circle cx="13" cy="10" r="5" stroke="#1e293b" stroke-width="1.5" fill="none"/></svg>
+                                                        </div>
+                                                        <div class="w-px h-2 bg-slate-800"></div>
+                                                        <div class="flex flex-col items-center"><div class="w-3 h-px bg-slate-800"></div><div class="w-2 h-px bg-slate-800 mt-px"></div><div class="w-1 h-px bg-slate-800 mt-px"></div></div>
+                                                        <span class="text-[8px] font-black text-slate-800 mt-0.5">PT</span>
+                                                        <span class="text-[7px] text-slate-500 font-mono">33kV / 110V</span>
+                                                    </div>
+                                                    <!-- Horizontal line connecting to trunk -->
+                                                    <svg width="30" height="2" class="self-start mt-4"><line x1="0" y1="1" x2="30" y2="1" stroke="#1e293b" stroke-width="2"/></svg>
+                                                </div>
+
+                                                <!-- Center: Vertical trunk with CT coil -->
+                                                <div class="flex flex-col items-center">
+                                                    <svg width="20" height="50">
+                                                        <line x1="10" y1="0" x2="10" y2="50" stroke="#1e293b" stroke-width="2.5"/>
+                                                        <path d="M5 15 C5 10, 15 10, 15 15 C15 20, 5 20, 5 25 C5 30, 15 30, 15 25" stroke="#1e293b" stroke-width="1.8" fill="none"/>
+                                                    </svg>
+                                                </div>
+
+                                                <!-- Right: CT label + MFM -->
+                                                <div class="flex items-center gap-2">
+                                                    <svg width="30" height="2" class="mt-1"><line x1="0" y1="1" x2="30" y2="1" stroke="#1e293b" stroke-width="2"/></svg>
+                                                    <div class="text-right mr-1">
+                                                        <span class="text-[8px] font-black text-slate-800 block">CT</span>
+                                                        <span class="text-[7px] text-slate-500 font-mono">33kV / 1A</span>
+                                                    </div>
+                                                    <div class="w-6 border-t border-dashed border-slate-600 relative"><i class="fa-solid fa-play text-[6px] text-slate-600 absolute -right-1 -top-1"></i></div>
+                                                    <div class="border border-slate-800 bg-white rounded p-1.5 text-center cursor-pointer hover:border-cyan-600">
+                                                        <i class="fa-solid fa-gauge-high text-cyan-700 text-[10px]"></i>
+                                                        <p class="text-[8px] font-black text-slate-900">MFM 33kV</p>
+                                                        <p class="text-[7px] text-slate-600">(EB METER)</p>
+                                                        <div class="mt-0.5 pt-0.5 border-t border-slate-200 text-[7px] font-mono">
+                                                            <p class="text-cyan-800">Exp: <span id="sld_eb_exp">0.000 MWh</span></p>
+                                                            <p class="text-amber-700">Imp: <span id="sld_eb_imp">0.000 MWh</span></p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SECTION 2: HT PANEL + VCB + TRANSFORMER -->
+                                <div class="section-row py-2 min-h-[140px] flex items-center">
+                                    <div class="section-label">2. HT PANEL<br><span class="text-[9px] text-slate-500">(33kV)</span></div>
+                                    <div class="w-full flex items-center justify-center">
+                                        <div class="flex flex-col items-center" style="width:520px;">
+                                            <!-- VCB -->
+                                            <div class="flex items-center gap-3">
+                                                <div class="border-2 border-slate-800 bg-white rounded px-3 py-1.5 text-center cursor-pointer hover:border-emerald-600">
+                                                    <div class="flex items-center gap-1 text-emerald-700"><i class="fa-solid fa-plug text-xs"></i><span class="text-[10px] font-black">VCB</span></div>
+                                                    <p class="text-[8px] text-slate-600 font-mono">33kV, 1250A</p>
+                                                    <p class="text-[7px] text-slate-500 font-mono">25kA</p>
+                                                    <span id="vcb_status_badge" class="inline-block mt-0.5 px-1.5 py-px rounded text-[7px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">CLOSED</span>
+                                                </div>
+                                                <!-- VCB Status to SCADA -->
+                                                <div class="flex items-center gap-1">
+                                                    <div class="w-6 border-t border-dashed border-slate-600 relative"><i class="fa-solid fa-play text-[6px] text-slate-600 absolute -right-1 -top-1"></i></div>
+                                                    <div class="border border-dashed border-slate-700 bg-slate-50 px-2 py-1 rounded text-center">
+                                                        <span class="text-[7px] font-black text-slate-800 block">VCB STATUS</span>
+                                                        <span class="text-[6px] text-slate-500">(OPEN / CLOSE)</span>
+                                                        <span class="text-[6px] font-bold text-emerald-700 block">TO SCADA</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Vertical line -->
+                                            <svg width="4" height="12"><line x1="2" y1="0" x2="2" y2="12" stroke="#1e293b" stroke-width="2"/></svg>
+                                            <!-- Transformer Symbol -->
+                                            <div class="flex items-center gap-4 cursor-pointer">
+                                                <div class="flex flex-col items-center relative">
+                                                    <div class="w-11 h-11 rounded-full border-2 border-slate-800 bg-white flex items-center justify-center font-black text-sm text-slate-900">Δ</div>
+                                                    <div class="w-11 h-11 rounded-full border-2 border-slate-800 bg-white flex items-center justify-center font-black text-sm text-slate-900 -mt-3">Y</div>
+                                                    <!-- Ground -->
+                                                    <div class="flex flex-col items-center mt-0.5"><div class="w-px h-1.5 bg-slate-800"></div><div class="w-3 h-px bg-slate-800"></div><div class="w-2 h-px bg-slate-800 mt-px"></div><div class="w-1 h-px bg-slate-800 mt-px"></div></div>
+                                                </div>
+                                                <div>
+                                                    <p class="text-[10px] font-black text-slate-900 uppercase">POWER TRANSFORMER</p>
+                                                    <p class="text-[9px] font-bold text-slate-700 font-mono">33kV / 800V</p>
+                                                    <p class="text-[8px] text-slate-600 font-mono">4.5MVA, ONAN, Dyn11</p>
+                                                    <div class="flex gap-2 mt-0.5 text-[8px] font-mono">
+                                                        <span class="text-amber-700 font-bold">OTI: <b id="sld_oil_temp">-- °C</b></span>
+                                                        <span class="text-amber-700 font-bold">WTI: <b id="sld_wti_temp">-- °C</b></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SECTION 3: LT PANEL + ACB + BUSBAR -->
+                                <div class="section-row py-2 min-h-[100px] flex flex-col items-center justify-center">
+                                    <div class="section-label">3. LT PANEL<br><span class="text-[9px] text-slate-500">(800V)</span></div>
+                                    <div class="flex items-center gap-3">
+                                        <div class="border-2 border-slate-800 bg-white rounded px-3 py-1.5 text-center cursor-pointer hover:border-blue-600">
+                                            <div class="flex items-center gap-1 text-blue-700"><i class="fa-solid fa-shield-halved text-xs"></i><span class="text-[10px] font-black">ACB</span></div>
+                                            <p class="text-[8px] text-slate-600 font-mono">800V, 4000A</p>
+                                            <p class="text-[7px] text-slate-500 font-mono">50kA</p>
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            <div class="w-6 border-t border-dashed border-slate-600 relative"><i class="fa-solid fa-play text-[6px] text-slate-600 absolute -right-1 -top-1"></i></div>
+                                            <div class="border border-dashed border-slate-700 bg-slate-50 px-2 py-1 rounded text-center">
+                                                <span class="text-[7px] font-black text-slate-800 block">ACB STATUS</span>
+                                                <span class="text-[6px] text-slate-500">(OPEN / CLOSE)</span>
+                                        </div>
+                                    </div>
+                                    <!-- Vertical line to busbar -->
+                                    <svg width="4" height="12"><line x1="2" y1="0" x2="2" y2="12" stroke="#0f172a" stroke-width="2.5"/></svg>
+                                    <!-- 800V Busbar with label above -->
+                                    <div class="w-full mt-0.5">
+                                        <div class="text-center mb-0.5"><span class="text-[9px] font-black text-slate-900 font-mono tracking-wider uppercase">800V, 3Φ, 3W, 50Hz</span></div>
+                                        <div class="w-full h-1.5 bg-slate-900"></div>
+                                    </div>
+                                </div>
+
+                                <!-- SECTION 4 + 5: MCCB + INVERTERS + PV STRINGS -->
+                                <div class="relative pt-2 pb-2 flex flex-col">
+                                    <div class="flex items-center justify-between mb-1.5 px-2">
+                                        <span class="text-xs font-black text-blue-700 tracking-tight" id="sld_mccb_header">4. MCCB TO INVERTERS</span>
+                                        <span class="text-xs font-black text-blue-700 tracking-tight" id="sld_inv_header">5. INVERTERS (<span id="sld_inv_count_label">14</span> NOS)</span>
+                                    </div>
+
+                                    <!-- Dynamic inverter columns -->
+                                    <div class="flex flex-wrap justify-center gap-3 text-center my-1" id="inverter_schematic_grid">
+                                        <!-- Rendered by JS -->
+                                    </div>
+
+                                    
+                                </div>
+
+                            </div>
+
+                            
+
+                        </div>
+
+                        <!-- BOTTOM: NOTES + SCADA ARCHITECTURE -->
+                        <div class="mt-3 pt-2 border-t-2 border-slate-800 grid grid-cols-12 gap-3 text-[8.5px]">
+                            <div class="col-span-5 text-slate-700 space-y-0.5">
+                                <b class="text-slate-900 uppercase block font-black text-[9px]">NOTES :</b>
+                                <p>1. ALL EQUIPMENTS SHALL BE AS PER RELEVANT IEC STANDARDS.</p>
+                                <p>2. ALL RATINGS ARE INDICATIVE AND SUBJECT TO DETAILED ENGINEERING.</p>
+                                <p>3. SCADA SYSTEM SHALL MONITOR ALL METERS, VCB STATUS, ACB STATUS, INVERTERS, TRANSFORMER PARAMETERS & WEATHER STATION.</p>
+                            </div>
+                            <div class="col-span-7 border-l border-slate-300 pl-3">
+                                <b class="text-slate-900 uppercase block font-black text-[9px] text-center mb-1">SCADA / COMMUNICATION ARCHITECTURE</b>
+                                <div class="flex items-center justify-between gap-1.5 text-center text-[8px] font-bold">
+                                    <div class="bg-slate-50 border border-slate-300 rounded p-1 flex-1"><i class="fa-solid fa-server text-blue-600 block text-[10px] mb-0.5"></i>INVERTERS / METERS / RELAYS</div>
+                                    <div class="text-[7px] font-mono text-slate-400"><span class="block">RS485 / ETH</span>⟷</div>
+                                    <div class="bg-slate-50 border border-slate-300 rounded p-1 flex-1"><i class="fa-solid fa-microchip text-amber-600 block text-[10px] mb-0.5"></i>SCADA PANEL / PLC / RTU</div>
+                                    <div class="text-[7px] font-mono text-slate-400"><span class="block">ETHERNET</span>⟷</div>
+                                    <div class="bg-slate-50 border border-slate-300 rounded p-1 flex-1"><i class="fa-solid fa-database text-purple-600 block text-[10px] mb-0.5"></i>SCADA SERVER</div>
+                                    <div class="text-[7px] font-mono text-slate-400"><span class="block">ETH / 4G</span>⟷</div>
+                                    <div class="bg-slate-50 border border-slate-300 rounded p-1 flex-1"><i class="fa-solid fa-mobile-screen-button text-emerald-600 block text-[10px] mb-0.5"></i>REMOTE ACCESS (WEB / APP)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
                 </div>
             </div>
-            <div class="flex items-center gap-3 shrink-0">
-                <span id="sldLiveDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                <span id="sldLiveStatus" class="hidden sm:inline text-[10px] font-black text-slate-500 uppercase tracking-wider">Connecting...</span>
-                <span id="clockDisplay" class="hidden md:inline text-xs font-bold font-mono text-slate-600">--:--:--</span>
-            </div>
-        </header>
+        </main>
+    </div>
 
-        <div class="p-3 sm:p-5 lg:p-7 w-full max-w-[1920px] mx-auto">
-            <div id="diagramGrid" class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start"></div>
-        </div>
-    </main>
-</div>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentPlant = <?php echo json_encode($currentPlant ?: 'vinoba-velliyanai'); ?>;
 
-<script>
-const WS_URL = 'wss://vinobasolar.scadahub.in:5001';
-const PLANTS = {
-    'vinoba-velliyanai': { name:'Vinoba Velliyanai', short:'VINOBA', capacity:'2 MW' },
-    'makkalpower': { name:'Makkal Power', short:'MAKKAL', capacity:'2 MW' },
-    'anushyam': { name:'Anushyam Plant', short:'ANUSHYAM', capacity:'2 MW' }
-};
-
-const states = {};
-Object.keys(PLANTS).forEach(id => {
-    states[id] = {
-        vcbPower:null, vcbExport:null, vcbImport:null, vcbPf:null,
-        oilTemp:null, windingTemp:null,
-        radiation:null, panelTemp:null, ambientTemp:null, windSpeed:null, humidity:null,
-        wmosLast:0,
-        inverters:{},
-        lastSeen:0
-    };
-    for (let i=1;i<=8;i++) {
-        states[id].inverters['INV-'+String(i).padStart(2,'0')] = {
-            power:null, daily:null, lastSeen:0
+        const plantConfig = {
+            'vinoba-velliyanai': {
+                name: 'Vinoba Velliyanai',
+                capacity: '2.0 MWp (DC) / ~2.0 MW (AC)',
+                titleCapacity: '2.0MW SOLAR POWER PLANT',
+                drawingNo: 'NUC/SLD/VNB/01',
+                defaultInverters: [1, 5, 6, 7]
+            },
+            'makkalpower': {
+                name: 'Makkal Power',
+                capacity: '2.0 MWp (DC) / ~2.0 MW (AC)',
+                titleCapacity: '2.0MW SOLAR POWER PLANT',
+                drawingNo: 'NUC/SLD/MKP/01',
+                defaultInverters: [1, 2, 3]
+            },
+            'anushyam': {
+                name: 'Anushyam Plant',
+                capacity: '2.0 MWp (DC) / ~2.0 MW (AC)',
+                titleCapacity: '2.0MW SOLAR POWER PLANT',
+                drawingNo: 'NUC/SLD/ASY/01',
+                defaultInverters: [3, 4, 5, 6]
+            }
         };
-    }
-});
 
-function nrm(v) {
-    return String(v ?? '').toLowerCase().replace(/[._-]+/g,' ').replace(/\s+/g,' ').trim();
-}
+        // Telemetry state
+        let sldData = {
+            vcbPower: 0, vcbToday: 0, vcbExpMwh: 0, vcbImpMwh: 0, vcbPf: 0.99,
+            oilTemp: 0, wtiTemp: 0,
+            inverters: {}
+        };
 
-function num(v) {
-    if (v === null || v === undefined || v === '') return null;
-    if (typeof v === 'object') {
-        for (const k of ['value','val','reading','current','last']) {
-            if (Object.prototype.hasOwnProperty.call(v,k)) {
-                const x=num(v[k]);
-                if (x!==null) return x;
+        function updatePlantDetailsUI(pcfg) {
+            const count = Object.keys(sldData.inverters).length;
+            const fullTitle = (pcfg.titleCapacity || 'SOLAR POWER PLANT');
+            document.getElementById('pageTitle').textContent = pcfg.name + ' - ' + fullTitle + ' (SLD)';
+            document.getElementById('sld_header_title').textContent = pcfg.name.toUpperCase() + ' - ' + fullTitle;
+            const tbTitle = document.getElementById('title_block_title');
+            if (tbTitle) tbTitle.textContent = pcfg.name.toUpperCase();
+            const plantDtCap = document.getElementById('plant_dt_capacity');
+            if (plantDtCap) plantDtCap.textContent = pcfg.capacity;
+            const plantDtCnt = document.getElementById('plant_dt_invcount');
+            if (plantDtCnt) plantDtCnt.textContent = count + ' NOS';
+            const capText = document.getElementById('sld_capacity_text');
+            if (capText) capText.textContent = pcfg.capacity;
+            const invCountLabel = document.getElementById('sld_inv_count_label');
+            if (invCountLabel) invCountLabel.textContent = count;
+            const bannerCount = document.getElementById('sld_banner_inv_count');
+            if (bannerCount) bannerCount.textContent = count + ' Nos. STRING INVERTERS (800V AC OUTPUT)';
+            const dwgEl = document.getElementById('title_block_dwg');
+            if (dwgEl) dwgEl.textContent = pcfg.drawingNo || 'NUC/SLD/01';
+        }
+
+        setInterval(() => { document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-IN', {hour12: false}); }, 1000);
+
+        // Sidebar
+        fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
+            document.getElementById('sidebar-container').innerHTML = html;
+            const _token = new URLSearchParams(window.location.search).get('token') || sessionStorage.getItem('vs_token') || '';
+            document.querySelectorAll('#sidebarNav a').forEach(link => {
+                let href = link.getAttribute('href');
+                if (!href || href.indexOf('logout') !== -1) return;
+                if (href.indexOf('?plant=') === -1) {
+                    link.setAttribute('href', href + '?plant=' + encodeURIComponent(currentPlant) + '&token=' + encodeURIComponent(_token));
+                } else if (href.indexOf('token=') === -1) {
+                    link.setAttribute('href', href + '&token=' + encodeURIComponent(_token));
+                }
+            });
+            const _pn = document.getElementById('sidebarPlantName');
+            const pcfg = plantConfig[currentPlant];
+            if (_pn) _pn.textContent = pcfg ? pcfg.name : currentPlant;
+            if (typeof initSidebar === 'function') initSidebar();
+            const curPage = window.location.pathname.split('/').pop() || 'sld.php';
+            document.querySelectorAll('#sidebarNav a').forEach(link => {
+                const dp = link.getAttribute('data-page');
+                if (dp && (dp === curPage || dp.replace('.php','.html') === curPage)) {
+                    link.classList.add('!bg-slate-100', '!text-emerald-700', '!border-emerald-500');
+                }
+            });
+            const overlay = document.getElementById('overlay'), sidebar = document.getElementById('sidebar');
+            document.getElementById('menuBtn')?.addEventListener('click', () => { sidebar?.classList.remove('-translate-x-full'); overlay?.classList.remove('hidden'); });
+            document.getElementById('closeSidebarBtn')?.addEventListener('click', () => { sidebar?.classList.add('-translate-x-full'); overlay?.classList.add('hidden'); });
+            overlay?.addEventListener('click', () => { sidebar?.classList.add('-translate-x-full'); overlay.classList.add('hidden'); });
+        });
+
+        function initPlantState() {
+            const pcfg = plantConfig[currentPlant] || {
+                name: currentPlant, capacity: '2.0 MWp (DC)',
+                titleCapacity: '2.0MW SOLAR POWER PLANT', drawingNo: 'NUC/SLD/01', defaultInverters: [1,2,3,4]
+            };
+            sldData = {
+                vcbPower: 0, vcbToday: 0, vcbExpMwh: 0, vcbImpMwh: 0, vcbPf: 0.99,
+                oilTemp: 0, wtiTemp: 0, inverters: {}
+            };
+            pcfg.defaultInverters.forEach(num => {
+                const pad = String(num).padStart(2, '0');
+                sldData.inverters['INV-' + pad] = {
+                    key: 'inverter' + num, num: num, power: 0, dailyGen: 0,
+                    activeStrings: 0, totalStrings: 24, status: 'Standby'
+                };
+            });
+            updatePlantDetailsUI(pcfg);
+            renderSchematic();
+        }
+        initPlantState();
+
+        function renderSchematic() {
+            const grid = document.getElementById('inverter_schematic_grid');
+            if (!grid) return;
+            let html = '';
+            const invKeys = Object.keys(sldData.inverters).sort((a,b) => (parseInt(a.replace(/\D/g,''))||0) - (parseInt(b.replace(/\D/g,''))||0));
+
+            invKeys.forEach((invLabel, idx) => {
+                const inv = sldData.inverters[invLabel];
+                const isOn = (inv.power > 0.05);
+                const fNum = idx + 1;
+                const lineColor = isOn ? '#1e293b' : '#94a3b8';
+                const mccbFill = isOn ? '#10b981' : '#ffffff';
+
+                html += `
+                    <div class="flex flex-col items-center" style="width:96px;">
+                        <!-- Feeder # -->
+                        <span class="text-[9px] font-black text-slate-800 font-mono mb-0.5">${fNum}</span>
+                        <!-- Tap from busbar -->
+                        <svg width="4" height="10"><line x1="2" y1="0" x2="2" y2="10" stroke="#0f172a" stroke-width="2"/></svg>
+                        <!-- MCCB symbol -->
+                        <div class="flex flex-col items-center cursor-pointer hover:scale-105 transition">
+                            <svg width="24" height="28" viewBox="0 0 24 28">
+                                <circle cx="12" cy="5" r="2.5" stroke="#0f172a" stroke-width="1.8" fill="${mccbFill}"/>
+                                <line x1="12" y1="7.5" x2="${isOn ? '12' : '19'}" y2="20.5" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+                                <circle cx="12" cy="23" r="2.5" stroke="#0f172a" stroke-width="1.8" fill="${mccbFill}"/>
+                            </svg>
+                            <span class="text-[8px] font-black text-slate-800">MCCB</span>
+                            <span class="text-[7px] text-slate-600 font-mono leading-tight">800V<br>630A<br>36kA</span>
+                        </div>
+                        <!-- Line with downward arrow to inverter -->
+                        <svg width="10" height="18" viewBox="0 0 10 18">
+                            <line x1="5" y1="0" x2="5" y2="14" stroke="#0f172a" stroke-width="2"/>
+                            <path d="M2 11 L5 16 L8 11" stroke="#0f172a" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                        </svg>
+                        <!-- Inverter block with diagonal split (~ / =) -->
+                        <div class="w-full border-2 border-slate-900 bg-white rounded p-1 text-center cursor-pointer hover:border-blue-600 transition">
+                            <div class="w-10 h-10 mx-auto border border-slate-900 bg-white relative flex flex-col justify-between p-0.5 overflow-hidden">
+                                <svg class="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
+                                    <line x1="0" y1="40" x2="40" y2="0" stroke="#0f172a" stroke-width="1.5"/>
+                                </svg>
+                                <div class="flex justify-between items-center text-[10px] font-black z-10">
+                                    <span class="text-slate-900 pl-0.5">~</span>
+                                </div>
+                                <div class="flex justify-end items-center text-[10px] font-black z-10">
+                                    <span class="text-slate-900 pr-0.5">=</span>
+                                </div>
+                            </div>
+                            <p class="text-[9px] font-black text-slate-900 mt-1 uppercase">${invLabel}</p>
+                            <p class="text-[8px] font-bold ${isOn ? 'text-emerald-700' : 'text-slate-500'} font-mono">${(inv.power||0).toFixed(1)} kW</p>
+                            <p class="text-[7px] text-slate-500 font-mono">${(inv.dailyGen||0).toFixed(0)} kWh</p>
+                        </div>
+                        <!-- Line with downward arrow to PV Strings -->
+                        <svg width="10" height="16" viewBox="0 0 10 16">
+                            <line x1="5" y1="0" x2="5" y2="12" stroke="#0f172a" stroke-width="2"/>
+                            <path d="M2 9 L5 14 L8 9" stroke="#0f172a" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                        </svg>
+                        <!-- PV STRINGS dashed box -->
+                        <div class="w-full border-2 border-dashed border-slate-800 bg-white rounded p-1 text-center cursor-pointer hover:border-amber-600 transition">
+                            <span class="text-[8px] font-black text-slate-900 block tracking-tight">PV<br>STRINGS</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = html;
+
+            // Update live values on diagram
+            const expEl = document.getElementById('sld_eb_exp');
+            const impEl = document.getElementById('sld_eb_imp');
+            if (expEl) expEl.textContent = sldData.vcbExpMwh.toFixed(3) + ' MWh';
+            if (impEl) impEl.textContent = sldData.vcbImpMwh.toFixed(3) + ' MWh';
+            const oilEl = document.getElementById('sld_oil_temp');
+            const wtiEl = document.getElementById('sld_wti_temp');
+            if (oilEl) oilEl.textContent = (sldData.oilTemp > 0 ? sldData.oilTemp.toFixed(1) : '--') + ' °C';
+            if (wtiEl) wtiEl.textContent = (sldData.wtiTemp > 0 ? sldData.wtiTemp.toFixed(1) : '--') + ' °C';
+            const vcbBadge = document.getElementById('vcb_status_badge');
+            if (vcbBadge) {
+                vcbBadge.textContent = sldData.vcbPower > 0.05 ? 'CLOSED' : 'OPEN';
+                vcbBadge.className = sldData.vcbPower > 0.05
+                    ? "inline-block mt-0.5 px-1.5 py-px rounded text-[7px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase"
+                    : "inline-block mt-0.5 px-1.5 py-px rounded text-[7px] font-black bg-slate-100 text-slate-600 border border-slate-300 uppercase";
             }
         }
-        return null;
-    }
-    const x=Number(String(v).replace(/,/g,''));
-    return Number.isFinite(x) ? x : null;
-}
 
-function textTime(raw) {
-    if (!raw) return Date.now();
-    const s=String(raw).trim();
-    if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(s)) {
-        const p=s.split(':').map(Number);
-        return new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate(),p[0],p[1],p[2]||0).getTime();
-    }
-    const d=new Date(s);
-    return Number.isNaN(d.getTime()) ? Date.now() : d.getTime();
-}
+        // WebSocket
+        let ws;
+        function connectWS() {
+            ws = new WebSocket("wss://vinobasolar.scadahub.in:5001");
+            ws.onopen = function() {
+                document.getElementById('refreshPulse').className = 'w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]';
+                ws.send(JSON.stringify({ type: "subscribe", unit_id: currentPlant }));
+            };
+            ws.onmessage = function(e) {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.unit_id !== currentPlant) return;
 
-function valueFor(values, keys) {
-    if (!values || typeof values!=='object') return null;
-    const wanted = keys.map(nrm);
-    for (const [key, raw] of Object.entries(values)) {
-        if (wanted.includes(nrm(key))) return num(raw);
-    }
-    return null;
-}
+                    const taskStr = d.task ? d.task.toString().toLowerCase() : '';
+                    const devStr = d.device ? d.device.toString().toLowerCase() : '';
 
-function weatherMetric(device, values) {
-    const d=nrm(device);
-    if (/pyranometer|pyrimeter/.test(d)) return ['radiation', valueFor(values,['raw data'])];
-    if (/pannel.*temp|panel.*temp|module.*temp/.test(d)) return ['panelTemp', valueFor(values,['pannel temperature','panel temperature','module temperature'])];
-    if (/ambient.*temp/.test(d) || d==='ambient') return ['ambientTemp', valueFor(values,['ambient temperature'])];
-    if (/^wind$|wind.*speed|anemometer/.test(d)) return ['windSpeed', valueFor(values,['windspeed','wind speed'])];
-    if (/^humidity$|relative humidity/.test(d)) return ['humidity', valueFor(values,['humidity','relative humidity'])];
-    return ['', null];
-}
+                    // VCB
+                    if (taskStr === 'vcb' || devStr.includes('vcb') || (d.values && d.values["3 Phase Active Power"] !== undefined)) {
+                        if (d.values) {
+                            if (d.values["3 Phase Active Power"] !== undefined) sldData.vcbPower = parseFloat(d.values["3 Phase Active Power"]) || 0;
+                            for (const k in d.values) {
+                                const kl = k.toLowerCase();
+                                if (/export/i.test(kl) && !/reactive/i.test(kl)) { const v = parseFloat(d.values[k]) || 0; sldData.vcbExpMwh = v > 10000 ? (v/1000) : v; }
+                                if (/import/i.test(kl) && !/reactive/i.test(kl)) { const v = parseFloat(d.values[k]) || 0; sldData.vcbImpMwh = v > 10000 ? (v/1000) : v; }
+                                if (/power.*factor|cosphi/i.test(kl)) sldData.vcbPf = Math.abs(parseFloat(d.values[k])) || 0.99;
+                            }
+                        }
+                        if (d.virtualTags && d.virtualTags["vcb-today"] !== undefined) {
+                            const vt = parseFloat(d.virtualTags["vcb-today"].value);
+                            if (vt > 0) sldData.vcbToday = vt;
+                        }
+                    }
 
-function isWeatherTask(task) {
-    return /^(wmos|wmas|weather)$/i.test(String(task||'').trim());
-}
+                    // Transformer
+                    if (taskStr === 'transformer' || devStr.includes('transformer')) {
+                        if (d.values) {
+                            for (const k in d.values) {
+                                const kl = k.toLowerCase();
+                                if (/oil/i.test(kl)) sldData.oilTemp = parseFloat(d.values[k]) || sldData.oilTemp;
+                                if (/winding/i.test(kl)) sldData.wtiTemp = parseFloat(d.values[k]) || sldData.wtiTemp;
+                            }
+                        }
+                    }
 
-function isInverter(device, task) {
-    return /\binverter\b/i.test(String(device||'')) || /inverter/i.test(String(task||''));
-}
+                    // Inverter
+                    if (d.values && !(taskStr === 'vcb' || devStr.includes('vcb') || taskStr === 'transformer' || devStr.includes('transformer'))) {
+                        const devName = d.device || '';
+                        let matchLabel = null;
+                        const match = devName.match(/inverter\s*(\d+)/i);
+                        if (match) {
+                            const num = parseInt(match[1]);
+                            matchLabel = 'INV-' + String(num).padStart(2, '0');
+                            if (!sldData.inverters[matchLabel]) {
+                                sldData.inverters[matchLabel] = {
+                                    key: 'inverter' + num, num: num, power: 0, dailyGen: 0,
+                                    activeStrings: 0, totalStrings: 24, status: 'Standby'
+                                };
+                                const pcfg = plantConfig[currentPlant] || { name: currentPlant, capacity: '2.0 MW', titleCapacity: '2.0MW SOLAR POWER PLANT', drawingNo: 'NUC/SLD/01' };
+                                updatePlantDetailsUI(pcfg);
+                            }
+                        }
 
-function inverterNumber(device) {
-    const m=String(device||'').match(/(?:inverter|inv)[\s_-]*(\d{1,2})/i);
-    return m ? parseInt(m[1],10) : null;
-}
+                        if (matchLabel && sldData.inverters[matchLabel]) {
+                            let pwr = 0, dgen = 0, activeCount = 0, totalCount = 0;
+                            for (const k in d.values) {
+                                const kl = k.toLowerCase();
+                                if (/\b(curr|current|amp|i)\b/i.test(kl) && !/\b(volt|temp|freq|phase|total)\b/i.test(kl) && /\d/.test(k)) {
+                                    totalCount++;
+                                    if (parseFloat(d.values[k]) > 0.5) activeCount++;
+                                }
+                                if (/active.*power|ac.*power|power.*ac|a\.c\..*power/i.test(kl) && !/reactive|apparent|3.phase|limit|ratio/i.test(kl)) {
+                                    pwr = parseFloat(d.values[k]) || 0;
+                                }
+                                if (/daily.*generation|daily.*gen|today.*gen/i.test(kl)) {
+                                    dgen = parseFloat(d.values[k]) || 0;
+                                }
+                            }
+                            sldData.inverters[matchLabel].power = pwr;
+                            if (dgen > 0) sldData.inverters[matchLabel].dailyGen = dgen;
+                            if (totalCount > 0) {
+                                sldData.inverters[matchLabel].activeStrings = activeCount;
+                                sldData.inverters[matchLabel].totalStrings = totalCount;
+                            }
+                        }
+                    }
 
-function applyFrame(unitId, task, device, values, time) {
-    if (!states[unitId] || !values || typeof values!=='object') return;
-    const taskText=String(task||'').toLowerCase();
-    const dev=nrm(device);
-    const received=textTime(time);
-    states[unitId].lastSeen=Date.now();
+                    renderSchematic();
+                } catch (err) {
+                    console.error("SLD WS error:", err);
+                }
+            };
+            ws.onclose = function() {
+                document.getElementById('refreshPulse').className = 'w-2.5 h-2.5 bg-red-500 rounded-full';
+                setTimeout(connectWS, 5000);
+            };
+        }
+        connectWS();
 
-    if (taskText==='vcb' || dev.includes('vcb')) {
-        const p=valueFor(values,['3 Phase Active Power']);
-        if (p!==null) states[unitId].vcbPower=p;
-        const ex=valueFor(values,['Active Total Export']);
-        const im=valueFor(values,['Active Total Import']);
-        const pf=valueFor(values,['Q1 PF','Power Factor']);
-        if (ex!==null) states[unitId].vcbExport=ex;
-        if (im!==null) states[unitId].vcbImport=im;
-        if (pf!==null) states[unitId].vcbPf=pf;
-        return;
-    }
-
-    if (taskText==='transformer' || dev.includes('transformer')) {
-        const oil=valueFor(values,['oil-temp','oil temp','oil temperature']);
-        const wt=valueFor(values,['winding-temp','winding temp','winding temperature']);
-        if (oil!==null) states[unitId].oilTemp=oil;
-        if (wt!==null) states[unitId].windingTemp=wt;
-        return;
-    }
-
-    if (isWeatherTask(taskText)) {
-        const [metric,val]=weatherMetric(device,values);
-        if (!metric) return;
-        states[unitId][metric]=val;
-        states[unitId].wmosLast=received;
-        return;
-    }
-
-    if (isInverter(device,taskText)) {
-        const n=inverterNumber(device);
-        if (!n || n<1 || n>8) return;
-        const key='INV-'+String(n).padStart(2,'0');
-        const powerCandidates=[];
-        const dailyCandidates=[];
-        Object.entries(values).forEach(([keyName,raw])=>{
-            const keyNorm=nrm(keyName);
-            const value=num(raw);
-            if (value===null) return;
-            if (/active.*power|ac.*power|power.*ac|a c .*power/.test(keyNorm) && !/reactive|apparent|limit|ratio|3 phase/.test(keyNorm)) powerCandidates.push(value);
-            if (/daily.*generation|daily.*gen|today.*generation|today.*gen/.test(keyNorm)) dailyCandidates.push(value);
-        });
-        if (powerCandidates.length) states[unitId].inverters[key].power=powerCandidates[0];
-        if (dailyCandidates.length) states[unitId].inverters[key].daily=dailyCandidates[0];
-        states[unitId].inverters[key].lastSeen=received;
-    }
-}
-
-function walk(node, inheritedUnit='', inheritedTask='', inheritedDevice='', inheritedTime='', depth=0) {
-    if (!node || typeof node!=='object' || depth>8) return;
-    const unit=String(node.unit_id || node.unitId || node.request?.unit_id || node.request?.unitId || inheritedUnit || '').trim();
-    const task=node.task || node.pageName || inheritedTask || '';
-    const device=node.device || node.deviceName || node.sensor || inheritedDevice || '';
-    const time=node.time || node.timestamp || node.ts || node.recorded_at || inheritedTime || '';
-
-    if (node.values && typeof node.values==='object' && !Array.isArray(node.values)) {
-        applyFrame(unit,task,device,node.values,time);
-    }
-    if (Array.isArray(node.data)) node.data.forEach(x=>walk(x,unit,task,device,time,depth+1));
-    else if (node.data && typeof node.data==='object') walk(node.data,unit,task,device,time,depth+1);
-    if (node.payload && typeof node.payload==='object') walk(node.payload,unit,task,device,time,depth+1);
-    if (node.result && typeof node.result==='object') walk(node.result,unit,task,device,time,depth+1);
-}
-
-function consume(message) {
-    if (!message || typeof message!=='object') return;
-    const unit=String(message.unit_id || message.unitId || message.request?.unit_id || message.request?.unitId || '').trim();
-    if (message.values && typeof message.values==='object' && !Array.isArray(message.values)) {
-        applyFrame(unit,message.task || message.pageName || '',message.device || message.deviceName || '',message.values,message.time || message.timestamp || message.ts || message.recorded_at || '');
-    }
-    walk(message.data,unit,message.task || message.pageName || '',message.device || message.deviceName || '',message.time || message.timestamp || message.ts || '',0);
-    walk(message.payload,unit,message.task || message.pageName || '',message.device || message.deviceName || '',message.time || message.timestamp || message.ts || '',0);
-    walk(message.result,unit,message.task || message.pageName || '',message.device || message.deviceName || '',message.time || message.timestamp || message.ts || '',0);
-}
-
-function esc(v) {
-    return String(v ?? '').replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
-}
-
-function fmt(v, decimals=1, suffix='') {
-    return v===null || v===undefined || !Number.isFinite(Number(v)) ? '--' : Number(v).toFixed(decimals)+suffix;
-}
-
-function inverterLine(x, y, key, data) {
-    const power=fmt(data.power,1,' kW');
-    const daily=fmt(data.daily,1,' kWh');
-    const live=data.lastSeen && (Date.now()-data.lastSeen)<=7000;
-    const stroke=live ? '#10b981' : '#0f172a';
-    return [
-        '<line x1="'+x+'" y1="'+(y-34)+'" x2="'+x+'" y2="'+(y-4)+'" stroke="'+stroke+'" stroke-width="2.5"/>',
-        '<path d="M '+(x-5)+' '+(y-10)+' L '+x+' '+y+' L '+(x+5)+' '+(y-10)+'" stroke="'+stroke+'" stroke-width="2" fill="none"/>',
-        '<circle cx="'+x+'" cy="'+(y+20)+'" r="19" fill="#fff" stroke="'+stroke+'" stroke-width="2.5"/>',
-        '<path d="M '+(x-10)+' '+(y+20)+' q 5 -10 10 0 t 10 0" stroke="'+stroke+'" stroke-width="1.7" fill="none"/>',
-        '<text x="'+x+'" y="'+(y+45)+'" text-anchor="middle" class="component-title label">'+esc(key)+'</text>',
-        '<text x="'+x+'" y="'+(y+61)+'" text-anchor="middle" class="component-value" fill="'+(live?'#059669':'#64748b')+'">'+esc(power)+'</text>',
-        '<text x="'+x+'" y="'+(y+75)+'" text-anchor="middle" class="small-value muted">'+esc(daily)+'</text>'
-    ].join('');
-}
-
-function renderDiagram(id) {
-    const p=PLANTS[id], s=states[id];
-    const invKeys=Object.keys(s.inverters).sort((a,b)=>parseInt(a.slice(4))-parseInt(b.slice(4)));
-    const liveAge=s.lastSeen ? Date.now()-s.lastSeen : Infinity;
-    const plantLive=liveAge<=7000;
-    const statusText=plantLive?'LIVE':'WAITING';
-    const statusFill=plantLive?'#059669':'#64748b';
-    const vcbState=s.vcbPower!==null ? (s.vcbPower>0.05?'CLOSED':'OPEN') : '--';
-
-    const invXs=[80,145,210,275,340,405,470,535];
-    const invY=570;
-    const invLines=invKeys.map((key,i)=>inverterLine(invXs[i],invY,key,s.inverters[key])).join('');
-
-    return '<svg class="sld-svg" viewBox="0 0 615 760" role="img" aria-label="'+esc(p.name)+' live single line diagram">' +
-        '<rect x="8" y="8" width="599" height="744" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>' +
-        '<text x="30" y="42" class="plant-title label">'+esc(p.name.toUpperCase())+'</text>' +
-        '<text x="30" y="60" class="section-title muted">LIVE SINGLE LINE DIAGRAM · '+esc(p.capacity.toUpperCase())+'</text>' +
-        '<circle class="status-dot" cx="575" cy="37" r="5" fill="'+statusFill+'"/>' +
-        '<text x="585" y="41" text-anchor="end" font-size="9" font-weight="900" fill="'+statusFill+'">'+statusText+'</text>' +
-
-        '<text x="307" y="92" text-anchor="middle" class="section-title muted">33 kV EB INCOMING</text>' +
-        '<text x="307" y="108" text-anchor="middle" class="small-value muted">50 Hz</text>' +
-        '<line x1="307" y1="115" x2="307" y2="150" class="wire"/>' +
-        '<path d="M300 142 L307 153 L314 142" class="wire"/>' +
-
-        '<circle cx="270" cy="175" r="16" class="symbol"/>' +
-        '<text x="270" y="179" text-anchor="middle" font-size="9" font-weight="900">LA</text>' +
-        '<line x1="286" y1="175" x2="307" y2="175" class="wire"/>' +
-        '<circle cx="344" cy="175" r="16" class="symbol"/>' +
-        '<text x="344" y="179" text-anchor="middle" font-size="9" font-weight="900">PT</text>' +
-        '<line x1="328" y1="175" x2="307" y2="175" class="wire"/>' +
-        '<line x1="307" y1="153" x2="307" y2="205" class="wire"/>' +
-        '<circle cx="307" cy="220" r="19" class="symbol"/>' +
-        '<text x="307" y="224" text-anchor="middle" font-size="10" font-weight="900">CT</text>' +
-        '<line x1="307" y1="239" x2="307" y2="280" class="wire"/>' +
-
-        '<circle cx="307" cy="302" r="26" class="symbol"/>' +
-        '<circle cx="307" cy="302" r="14" fill="#fff" stroke="#0f172a" stroke-width="2"/>' +
-        '<text x="307" y="299" text-anchor="middle" font-size="8" font-weight="900">VCB</text>' +
-        '<text x="307" y="311" text-anchor="middle" font-size="8" font-weight="900" fill="'+(vcbState==='CLOSED'?'#059669':'#64748b')+'">'+vcbState+'</text>' +
-        '<line x1="307" y1="328" x2="307" y2="366" class="'+(vcbState==='CLOSED'?'wire-live':'wire')+'"/>' +
-
-        '<text x="30" y="150" class="metric-title">ACTIVE EXPORT</text><text x="30" y="168" class="metric-value">'+esc(fmt(s.vcbExport,2,' kWh'))+'</text>' +
-        '<text x="30" y="195" class="metric-title">ACTIVE IMPORT</text><text x="30" y="213" class="metric-value">'+esc(fmt(s.vcbImport,2,' kWh'))+'</text>' +
-        '<text x="485" y="150" class="metric-title">VCB POWER</text><text x="485" y="168" class="metric-value">'+esc(fmt(s.vcbPower,2,' kW'))+'</text>' +
-        '<text x="485" y="195" class="metric-title">POWER FACTOR</text><text x="485" y="213" class="metric-value">'+esc(fmt(s.vcbPf,2,''))+'</text>' +
-
-        '<line x1="307" y1="366" x2="307" y2="402" class="wire"/>' +
-        '<circle cx="307" cy="430" r="22" class="symbol"/>' +
-        '<circle cx="307" cy="430" r="13" fill="#fff" stroke="#0f172a" stroke-width="2"/>' +
-        '<text x="307" y="427" text-anchor="middle" font-size="8" font-weight="900">TX</text>' +
-        '<text x="307" y="438" text-anchor="middle" font-size="8" font-weight="900">ΔY</text>' +
-        '<text x="307" y="466" text-anchor="middle" class="component-title label">POWER TRANSFORMER</text>' +
-        '<text x="307" y="481" text-anchor="middle" class="small-value muted">33 kV / 800 V</text>' +
-        '<text x="150" y="443" class="metric-title">OTI</text><text x="150" y="460" class="metric-value">'+esc(fmt(s.oilTemp,1,' °C'))+'</text>' +
-        '<text x="445" y="443" class="metric-title">WTI</text><text x="445" y="460" class="metric-value">'+esc(fmt(s.windingTemp,1,' °C'))+'</text>' +
-
-        '<line x1="307" y1="492" x2="307" y2="525" class="wire"/>' +
-        '<line x1="52" y1="525" x2="562" y2="525" stroke="#0f172a" stroke-width="6" stroke-linecap="round"/>' +
-        '<text x="307" y="514" text-anchor="middle" class="section-title muted">800 V AC BUS</text>' +
-
-        invLines +
-
-        '<line x1="52" y1="650" x2="562" y2="650" stroke="#94a3b8" stroke-width="1"/>' +
-        '<text x="307" y="674" text-anchor="middle" class="section-title muted">WMOS / WMAS LIVE WEATHER</text>' +
-        '<text x="65" y="699" class="metric-title">RAD</text><text x="65" y="717" class="metric-value">'+esc(fmt(s.radiation,0,' W/m²'))+'</text>' +
-        '<text x="180" y="699" class="metric-title">PANEL</text><text x="180" y="717" class="metric-value">'+esc(fmt(s.panelTemp,1,' °C'))+'</text>' +
-        '<text x="300" y="699" class="metric-title">AMBIENT</text><text x="300" y="717" class="metric-value">'+esc(fmt(s.ambientTemp,1,' °C'))+'</text>' +
-        '<text x="420" y="699" class="metric-title">WIND</text><text x="420" y="717" class="metric-value">'+esc(fmt(s.windSpeed,1,' m/s'))+'</text>' +
-        '<text x="535" y="699" text-anchor="end" class="metric-title">HUM</text><text x="535" y="717" text-anchor="end" class="metric-value">'+esc(fmt(s.humidity,1,' %RH'))+'</text>' +
-        '<text x="307" y="739" text-anchor="middle" class="small-value muted">Last SCADA sample: '+(s.wmosLast?new Date(s.wmosLast).toLocaleTimeString('en-IN',{hour12:false}):'--')+'</text>' +
-    '</svg>';
-}
-
-function renderAll() {
-    document.getElementById('diagramGrid').innerHTML=Object.keys(PLANTS).map(id=>'<div class="diagram-shell">'+renderDiagram(id)+'</div>').join('');
-    const anyLive=Object.values(states).some(s=>s.lastSeen && Date.now()-s.lastSeen<=7000);
-    document.getElementById('sldLiveDot').className='w-2.5 h-2.5 rounded-full '+(anyLive?'bg-emerald-500 animate-pulse':'bg-slate-400');
-    document.getElementById('sldLiveStatus').textContent=anyLive?'Live SCADA':'Waiting for live SCADA';
-}
-
-function connectWS() {
-    const socket=new WebSocket(WS_URL);
-    socket.onopen=()=>{
-        document.getElementById('sldLiveDot').className='w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-        document.getElementById('sldLiveStatus').textContent='Live SCADA';
-        Object.keys(PLANTS).forEach(id=>{
-            socket.send(JSON.stringify({type:'subscribe',unit_id:id}));
-            socket.send(JSON.stringify({type:'get_devices',unit_id:id}));
-        });
-    };
-    socket.onmessage=event=>{
-        try {
-            const message=JSON.parse(event.data);
-            consume(message);
-            renderAll();
-        } catch (_) {}
-    };
-    socket.onclose=()=>{
-        document.getElementById('sldLiveDot').className='w-2.5 h-2.5 rounded-full bg-red-500';
-        document.getElementById('sldLiveStatus').textContent='Reconnecting...';
-        setTimeout(connectWS,2500);
-    };
-    socket.onerror=()=>{};
-}
-
-fetch('sidebar.html',{cache:'no-store'}).then(r=>r.text()).then(html=>{
-    const holder=document.getElementById('sidebar-container');
-    holder.innerHTML=html;
-    holder.querySelectorAll('script').forEach(oldScript=>{
-        const s=document.createElement('script');
-        s.textContent=oldScript.textContent;
-        oldScript.replaceWith(s);
-    });
-    const sidebar=document.getElementById('sidebar');
-    const overlay=document.getElementById('overlay');
-    document.getElementById('menuBtn')?.addEventListener('click',()=>{
-        sidebar?.classList.remove('-translate-x-full');
-        overlay?.classList.remove('hidden');
-    });
-    document.getElementById('closeSidebarBtn')?.addEventListener('click',()=>{
-        sidebar?.classList.add('-translate-x-full');
-        overlay?.classList.add('hidden');
-    });
-    overlay?.addEventListener('click',()=>{
-        sidebar?.classList.add('-translate-x-full');
-        overlay?.classList.add('hidden');
-    });
-}).catch(()=>{});
-
-renderAll();
-connectWS();
-setInterval(()=>{
-    document.getElementById('clockDisplay').textContent=new Date().toLocaleTimeString('en-IN',{hour12:false});
-    renderAll();
-},1000);
-</script>
-</body>
+        // Inspector Modal
+    </script>/body>
 </html>
