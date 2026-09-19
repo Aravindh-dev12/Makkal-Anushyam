@@ -139,8 +139,10 @@ CREATE TABLE `weather_readings` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `plant_id` VARCHAR(50) NOT NULL,
     `radiation` DECIMAL(8,2) DEFAULT 0 COMMENT 'W/m2 - raw data',
-    `panel_temp` DECIMAL(5,1) DEFAULT 0 COMMENT 'degC - pannel temperature',
+    `panel_temp` DECIMAL(5,1) DEFAULT 0 COMMENT 'degC - panel temperature',
+    `ambient_temp` DECIMAL(5,1) DEFAULT 0 COMMENT 'degC - ambient temperature',
     `wind_speed` DECIMAL(5,2) DEFAULT 0 COMMENT 'm/s - windspeed',
+    `humidity` DECIMAL(6,2) DEFAULT 0 COMMENT '%RH - humidity',
     `recorded_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_wx_plant` (`plant_id`),
     INDEX `idx_wx_time` (`recorded_at`)
