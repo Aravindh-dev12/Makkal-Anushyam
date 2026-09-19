@@ -372,7 +372,7 @@ function extractInverter(values) {
         const v = parseNumber(raw);
         if (v === null) continue;
         if (power === null && /active.*power|ac.*power|power.*ac|a c .*power/.test(n) && !/reactive|apparent|limit|ratio|3 phase/.test(n)) power = v;
-        if (daily === null && /daily.*generation|daily.*gen|today.*generation|today.*gen/.test(n)) daily = v;
+        if (daily === null && /daily.*generation|daily.*gen|today.*generation|today.*gen|daily.*energy|today.*energy|energy.*today|generation.*today|generation.*daily/.test(n)) daily = v;
     }
     return { power, daily };
 }
