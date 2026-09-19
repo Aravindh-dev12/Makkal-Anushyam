@@ -308,8 +308,6 @@ function ensureWmosTable($conn) {
     if ($res && $res->num_rows === 0) {
         @$conn->query("ALTER TABLE `weather_readings` ADD `humidity` DECIMAL(5,1) DEFAULT 0 AFTER `wind_speed`");
     }
-
-    @$conn->query("
 }
 
 ensureWmosTable($conn);
