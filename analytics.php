@@ -807,7 +807,7 @@ function exportWmosExcel() {
     return true;
 }
 
-async function downloadSelectedExcel() {
+async async function downloadSelectedExcel() {
     if (!selectedSource) return;
     const old = generateButton.innerHTML;
     generateButton.disabled = true;
