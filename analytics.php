@@ -293,8 +293,9 @@ function telemetryDate(raw) {
     if (!raw) return new Date();
     if (raw instanceof Date) return raw;
     const s = String(raw).trim();
-    if (/^\\d{1,2}:\\d{2}(?::\\d{2})?$/.test(s)) {
-        const p = s.split(':').map(Number);
+    const timeParts = s.split(':');
+    if ((timeParts.length === 2 || timeParts.length === 3) && timeParts.every(part => /^\d+$/.test(part))) {
+        const p = timeParts.map(Number);
         return new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), p[0], p[1], p[2] || 0);
     }
     const d = new Date(s);
@@ -644,6 +645,14 @@ function updateGenerateButton() {
     generateButton.disabled = !selectedSource;
 }
 
+function seedConfiguredInverters() {
+    // Make the separate Inverters group available immediately. These are
+    // names only; all power/energy readings still come exclusively from SCADA.
+    const count = Math.max(0, parseInt(cfg.inverter_count || 0, 10));
+    for (let i = 1; i <= count; i++) ensureInverter('Inverter ' + i, 'inverter');
+    populateInverterOptions();
+}
+
 function addDailyValue(value, time) {
     if (!value || typeof value !== 'object') return;
     consumeLiveMessage(value);
@@ -837,6 +846,7 @@ function updateAll() {
 }
 
 initCharts();
+seedConfiguredInverters();
 renderMode();
 connectWebSocket();
 setInterval(updateAll, 1000);
