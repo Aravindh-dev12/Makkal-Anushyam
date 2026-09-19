@@ -346,62 +346,54 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
 
         function captureLiveWeatherValues(values, device, task, sourceTime, unitId = '') {
             if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
-            const dev = String(device || '').toLowerCase();
-            const taskStr = String(task || '').toLowerCase();
+            const dev = String(device || '').toLowerCase().trim();
+            const taskStr = String(task || '').toLowerCase().trim();
             const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
             if (unitId && String(unitId) !== String(plantSelect.value || 'vinoba-velliyanai')) return false;
-            const weatherDevice = /pyranometer|pyrimeter|pannel|panel|module|ambient|wind|humid/i.test(dev);
-            const weatherTask = /^(wmos|wmas|weather)$/i.test(taskStr.trim());
-            if (!weatherTask && !weatherDevice) return false;
+            if (!/^(wmos|wmas|weather)$/.test(taskStr)) return false;
 
-            const read = (direct, patterns = []) => {
-                const wanted = direct.map(normalizeKey);
-                for (const [key, raw] of Object.entries(values)) {
-                    const norm = normalizeKey(key);
-                    if (wanted.includes(norm)) { const n = normalizeWeatherValue(raw); if (n !== null) return n; }
-                }
-                for (const [key, raw] of Object.entries(values)) {
-                    const norm = normalizeKey(key);
-                    if (patterns.some(rx => rx.test(norm))) { const n = normalizeWeatherValue(raw); if (n !== null) return n; }
-                }
-                return null;
-            };
-
-            let rad = read(['raw data','radiation','solar radiation','irradiance'], [/^raw data$/,/radiation/,/irradiance/,/pyran/]);
-            let panel = read(['pannel temperature','panel temperature','module temperature'], [/pannel.*temp/,/panel.*temp/,/module.*temp/,/^temperature$/,/^temp$/,/^temp data$/]);
-            let ambient = read(['ambient temperature'], [/ambient.*temp/]);
-            // Exact live SCADA Wind frame: device="Wind", values.windspeed.
-            let wind = null;
-            if (/^wind$|wind speed|anemometer/.test(dev)) {
-                const directWindKey = Object.keys(values).find(key => normalizeKey(key) === 'windspeed' || normalizeKey(key) === 'wind speed');
-                if (directWindKey) wind = normalizeWeatherValue(values[directWindKey]);
+            let metric = '';
+            let raw = null;
+            if (/pyranometer|pyrimeter/.test(dev)) {
+                metric = 'rad';
+                const key = Object.keys(values).find(k => normalizeKey(k) === 'raw data');
+                raw = key ? values[key] : null;
+            } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) {
+                metric = 'ptemp';
+                const key = Object.keys(values).find(k => ['pannel temperature','panel temperature','module temperature'].includes(normalizeKey(k)));
+                raw = key ? values[key] : null;
+            } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) {
+                metric = 'atemp';
+                const key = Object.keys(values).find(k => normalizeKey(k) === 'ambient temperature');
+                raw = key ? values[key] : null;
+            } else if (/^wind$|wind.*speed|anemometer/.test(dev)) {
+                metric = 'wind';
+                const key = Object.keys(values).find(k => ['windspeed','wind speed'].includes(normalizeKey(k)));
+                raw = key ? values[key] : null;
+            } else if (/^humidity$|humid/.test(dev)) {
+                metric = 'hum';
+                const key = Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalizeKey(k)));
+                raw = key ? values[key] : null;
+            } else {
+                return false;
             }
-            if (wind === null) wind = read(['windspeed','wind speed','wind_speed','wind velocity','windvelocity','wind','speed','velocity'], [/wind.*speed/,/^windspeed$/,/^wind$/, /wind.*velocity/, /velocity.*wind/, /anemometer/,/(^|\\s)(speed|velocity)(?:\\s|$)/]);
-            let hum = read(['humidity','relative humidity'], [/humidity/]);
 
-            if (panel === null && /pannel|panel|module/.test(dev)) panel = read([], [/temp/]);
-            if (ambient === null && /ambient/.test(dev)) ambient = read([], [/temp/]);
-            if (wind === null && /wind/.test(dev)) wind = read([], [/wind|speed/]);
-            if (hum === null && /humid/.test(dev)) hum = read([], [/hum/]);
-
-            let updated = false;
-            if (rad !== null) liveWeather.rad = rad;
-            if (panel !== null) liveWeather.ptemp = panel;
-            if (ambient !== null) liveWeather.atemp = ambient;
-            if (wind !== null) liveWeather.wind = wind;
-            if (hum !== null) liveWeather.hum = hum;
-            if (rad !== null || panel !== null || ambient !== null || wind !== null || hum !== null) {
-                updated = true;
-                liveWeather.lastAt = Date.now();
-                liveWeather.lastSampleAt = sourceTime ? new Date(sourceTime).getTime() || Date.now() : Date.now();
-                if (unitId) liveWmasUnitId = unitId;
-            }
-            if (updated && currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
+            const numeric = raw === null || raw === undefined ? null : normalizeWeatherValue(raw);
+            if (metric === 'ptemp' && numeric === null) return false;
+            if (numeric === null) return false;
+            if (metric === 'rad') liveWeather.rad = numeric;
+            if (metric === 'ptemp') liveWeather.ptemp = numeric;
+            if (metric === 'atemp') liveWeather.atemp = numeric;
+            if (metric === 'wind') liveWeather.wind = numeric;
+            if (metric === 'hum') liveWeather.hum = numeric;
+            liveWeather.lastAt = Date.now();
+            liveWeather.lastSampleAt = sourceTime ? new Date(sourceTime).getTime() || Date.now() : Date.now();
+            if (unitId) liveWmasUnitId = unitId;
+            if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
                 renderWmasLiveRow();
             }
-            return updated;
+            return true;
         }
-
         function handleWSDailyWeather(rows, fallbackDevice = '', fallbackTask = '') {
             if (!Array.isArray(rows) || !rows.length) return;
             rows.forEach(r => {
