@@ -82,7 +82,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     <button id="menuBtn" class="md:hidden text-emerald-600 text-2xl focus:outline-none shrink-0">&#9776;</button>
                     <div class="min-w-0">
                         <h2 class="text-xl font-black text-slate-800 tracking-tight truncate">Plant Analytics</h2>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live inverter output</p>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live inverter &amp; WMAS telemetry</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 shrink-0">
@@ -220,8 +220,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         const plantNames = Object.fromEntries(Object.entries(plantConfig).map(([id, cfg]) => [id, cfg.name]));
         const cfg = plantConfig[currentPlant] || { capacity: 1.0, inverter_count: 0 };
         // WMOS/WMAS telemetry is broadcast through the same live SCADA stream used by Home.
-        const COMMON_WMOS_UNIT_ID = wsUnitId;
-        const COMMON_WMOS_WS_URL = cfg.ws_url || '';
+        const LIVE_WMOS_UNIT_ID = wsUnitId;
+        const LIVE_WMOS_WS_URL = cfg.ws_url || '';
         const TREND_START_MINUTE = 6 * 60;
         const TREND_END_MINUTE = 19 * 60;
         const TREND_BUCKET_MINUTES = 5;
@@ -606,7 +606,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function requestSelectedWmosToday() {
             const source = WMOS_EXPORT_SOURCES[wmasSelect?.value || ''];
             if (!source || !analyticsSocket || analyticsSocket.readyState !== WebSocket.OPEN) return;
-            analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: liveWmasUnitId || COMMON_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
+            analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: liveWmasUnitId || LIVE_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
         function renderWmasLiveStatus() {
@@ -832,7 +832,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function exportSelectedWmosExcel(sourceKey){
             const source=WMOS_EXPORT_SOURCES[sourceKey];if(!source)return false;const raw=Array.from(analyticsWmosHistory[sourceKey]?.values()||[]).sort((a,b)=>a.timestamp-b.timestamp),minuteRows=minuteSeries(raw,row=>Number(row.value),()=>source.label);if(!minuteRows.length)return false;
             const rows=minuteRows.map(row=>({Date:row.date,Time:row.time,'Data Source':source.label,'WebSocket Device':row.reading?.device||source.device,Value:Number(Number(row.value).toFixed(source.decimals)),Unit:source.unit,'Sample Time':row.sampleTime,'Reading Status':row.status}));
-            const safeName=source.label.replace(/[^a-z0-9_-]+/gi,'_'),summary=reportSummary(source.label,raw,rows,COMMON_WMOS_UNIT_ID);return writeAnalyticsWorkbook(rows,'Full WMOS Data',`${currentPlant}_${safeName}_${todayKey()}_full_report`,[{wch:12},{wch:12},{wch:24},{wch:24},{wch:14},{wch:12},{wch:14},{wch:18}],summary);
+            const safeName=source.label.replace(/[^a-z0-9_-]+/gi,'_'),summary=reportSummary(source.label,raw,rows,LIVE_WMOS_UNIT_ID);return writeAnalyticsWorkbook(rows,'Full WMOS Data',`${currentPlant}_${safeName}_${todayKey()}_full_report`,[{wch:12},{wch:12},{wch:24},{wch:24},{wch:14},{wch:12},{wch:14},{wch:18}],summary);
         }
 
         function waitForHistory(test,timeoutMs=3500){return new Promise(resolve=>{if(test()){resolve(true);return;}const started=Date.now(),timer=setInterval(()=>{if(test()){clearInterval(timer);resolve(true);}else if(Date.now()-started>=timeoutMs){clearInterval(timer);resolve(false);}},100);});}
