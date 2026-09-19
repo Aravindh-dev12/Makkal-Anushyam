@@ -111,6 +111,27 @@ function wsNumericValue($value) {
     return is_numeric($clean) ? (float)$clean : null;
 }
 
+function walkLiveWeatherValues($node, $context = [], &$weather = null, &$seen = null, $depth = 0) {
+    if ($weather === null) $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
+    if ($seen === null) $seen = [];
+    if (!is_array($node) || $depth > 7) return;
+    foreach ($node as $key => $value) {
+        $name = strtolower(preg_replace('/[_\-.]+/', ' ', trim((string)$key)));
+        $ctx = strtolower(implode(' ', array_merge($context, [$name])));
+        if (is_array($value)) {
+            walkLiveWeatherValues($value, array_merge($context, [$name]), $weather, $seen, $depth + 1);
+            continue;
+        }
+        $num = wsNumericValue($value);
+        if ($num === null) continue;
+        if (preg_match('/radiat|irradiance|pyran|raw data/', $ctx)) $weather['radiation'] = $num;
+        if (preg_match('/pannel|panel|module/',$ctx) && preg_match('/temp|temperature/',$ctx)) $weather['panel_temp'] = $num;
+        if (preg_match('/ambient/',$ctx) && preg_match('/temp|temperature/',$ctx)) $weather['ambient_temp'] = $num;
+        if (preg_match('/wind|windspeed|wind speed|wind velocity|velocity|anemometer/',$ctx)) $weather['wind_speed'] = $num;
+        if (preg_match('/humidity|relative humidity/',$ctx)) $weather['humidity'] = $num;
+    }
+}
+
 function fetchLiveData($plant) {
     $ws = new SimpleWSClient();
     if (!$ws->connect('vinobasolar.scadahub.in', 5001)) {
@@ -139,19 +160,12 @@ $frames = []; $start = time();
         $dev = strtolower($f['device'] ?? $f['deviceName'] ?? $f['sensor'] ?? '');
         $v = $f['values'] ?? [];
         if (!is_array($v) && isset($f['data']) && is_array($f['data'])) $v = $f['data'];
-        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance/i', $dev.' '.$task)) {
-            foreach ($v as $vk => $vv) {
-                $vkl = strtolower($vk);
-                if (strpos($vkl, 'radiation') !== false || strpos($dev, 'pyranometer') !== false || strpos($vkl, 'raw data') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['radiation'] = $num; }
-                if (strpos($vkl, 'pannel') !== false || strpos($dev, 'pannel') !== false || strpos($vkl, 'panel') !== false ||
-                    ((strpos($vkl, 'temp') !== false || strpos($vkl, 'temperature') !== false) &&
-                     (strpos($dev, 'pannel') !== false || strpos($dev, 'panel') !== false || strpos($dev, 'module') !== false))) {
-                    $num = wsNumericValue($vv);
-                    if ($num !== null) $latest['wms']['panel_temp'] = $num;
-                }
-                if (strpos($vkl, 'ambient') !== false || strpos($dev, 'ambient') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['ambient_temp'] = $num; }
-                if (strpos($vkl, 'wind') !== false || strpos($dev, 'wind') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['wind_speed'] = $num; }
-                if (strpos($vkl, 'humidity') !== false || strpos($dev, 'humidity') !== false) { $num = wsNumericValue($vv); if ($num !== null) $latest['wms']['humidity'] = $num; }
+        $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
+        $weatherSeen = [];
+        if ($task === 'wmos' || $task === 'wmas' || $task === 'weather' || preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance|anemometer|velocity|windspeed/i', $dev.' '.$task)) {
+            walkLiveWeatherValues($f, [$dev, $task], $weather, $weatherSeen);
+            foreach ($weather as $weatherKey => $weatherValue) {
+                if ($weatherValue !== null) $latest['wms'][$weatherKey] = $weatherValue;
             }
         }
         if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'inverter' || strpos($dev, 'inverter') !== false)) {
