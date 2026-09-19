@@ -591,9 +591,9 @@
             const tsk = String(task || '').toLowerCase();
             const normalize = value => String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
             const keys = Object.keys(values).map(normalize);
-            const weatherSignal = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/.test(dev + ' ' + tsk) ||
-                keys.some(k => /pyran|radiat|irradiance|pannel.*temp|panel.*temp|module.*temp|ambient.*temp|wind.*speed|humidity/.test(k));
-            if (!weatherSignal) return false;
+            const weatherDevice = /pyranometer|pyrimeter|pannel|panel|module|ambient|wind|humid/i.test(dev);
+            const weatherTask = /^(wmos|wmas|weather)$/i.test(tsk.trim());
+            if (!weatherTask && !weatherDevice) return false;
             const read = (direct, patterns = []) => {
                 const wanted = direct.map(normalize);
                 for (const [key, raw] of Object.entries(values)) { const norm = normalize(key); if (wanted.includes(norm)) { const n = homeWsNumeric(raw); if (n !== null) return n; } }
@@ -627,6 +627,7 @@
 
         function homeHandleWeatherMessage(message) {
             if (!message || typeof message !== 'object') return false;
+            if (message.unit_id && String(message.unit_id) !== String(currentPlant)) return false;
             const baseDevice = message.device || message.deviceName || message.sensor || '';
             const baseTask = message.task || message.pageName || message.type || '';
             let updated = homeHandleWeather(message.values, baseDevice, baseTask);
