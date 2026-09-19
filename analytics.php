@@ -466,18 +466,42 @@ async function loadStoredWmosData() {
 
 function consumeWmosFrame(values, device, task, sourceTime) {
     if (!hasWeatherTask(task)) return false;
+
+    // SCADA sends WMOS as separate device messages. Do not require the
+    // device name to be perfectly configured: identify the metric from the
+    // actual WMOS field first, then use the device name as a fallback.
+    const candidates = Object.keys(WMOS_DEVICES);
+    for (const metric of candidates) {
+        const value = exactWmosValue(metric, values);
+        if (value !== null) {
+            mergeWmosSample(metric, value, sourceTime, device);
+            return true;
+        }
+    }
+
     const metric = deviceToWmosMetric(device);
     if (!metric) return false;
-    const value = exactWmosValue(metric, values);
-    if (metric === 'panelTemp' && value === null) {
-        state.wmos.panelTemp = null;
-        state.wmos.lastReceivedAt = Date.now();
-        state.wmos.lastSampleAt = telemetryDate(sourceTime).getTime();
-        return true;
+
+    // Some SCADA configurations use an alias for the value field. Accept
+    // the known aliases for the matching WMOS device without accepting
+    // unrelated telemetry.
+    const aliases = {
+        radiation: ['raw data', 'radiation'],
+        panelTemp: ['pannel temperature', 'panel temperature', 'module temperature'],
+        ambientTemp: ['Ambient temperature', 'ambient temperature', 'ambient temp'],
+        windSpeed: ['windspeed', 'wind speed'],
+        humidity: ['humidity', 'Humidity', 'relative humidity']
+    };
+    for (const key of aliases[metric] || []) {
+        if (!Object.prototype.hasOwnProperty.call(values || {}, key)) continue;
+        const value = parseNumber(values[key]);
+        if (value !== null) {
+            mergeWmosSample(metric, value, sourceTime, device);
+            return true;
+        }
     }
-    if (value === null) return false;
-    mergeWmosSample(metric, value, sourceTime, device);
-    return true;
+
+    return false;
 }
 
 function messageUnitId(message) {
