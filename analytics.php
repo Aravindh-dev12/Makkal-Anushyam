@@ -83,19 +83,6 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         </header>
 
         <div class="p-4 sm:p-6 lg:p-8 w-full max-w-[1920px] mx-auto flex flex-col gap-6">
-            <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Performance</p>
-                    <p id="perfVal" class="text-3xl font-black text-slate-900 mt-2">--%</p>
-                    <p class="text-xs text-slate-500 mt-1">Live capacity factor</p>
-                </div>
-                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Yield</p>
-                    <p id="yieldVal" class="text-3xl font-black text-slate-900 mt-2">-- kWh</p>
-                    <p class="text-xs text-slate-500 mt-1">Live daily energy</p>
-                </div>
-            </section>
-
             <section class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
                 <div class="flex flex-col xl:flex-row xl:items-end gap-4">
                     <div class="min-w-0">
@@ -589,18 +576,9 @@ function renderWmos() {
 function updateCards() {
     const rows = Object.values(state.inverters).filter(inv => inv.lastSeen && Date.now() - inv.lastSeen <= 5000);
     if (!rows.length) {
-        document.getElementById('perfVal').textContent = '--%';
-        document.getElementById('yieldVal').textContent = '-- kWh';
-        document.getElementById('availVal').textContent = '--%';
         return;
     }
-    const power = rows.reduce((sum, inv) => sum + (Number(inv.outputKw) || 0), 0);
-    const energy = rows.reduce((sum, inv) => sum + (Number(inv.dailyGen) || 0), 0);
-    const active = rows.filter(inv => Number(inv.outputKw) > 0.1).length;
-    const capacityKw = Number(cfg.capacity || 0) * 1000;
-    document.getElementById('perfVal').textContent = capacityKw > 0 ? ((power / capacityKw) * 100).toFixed(1) + '%' : '--%';
-    document.getElementById('yieldVal').textContent = energy.toFixed(2) + ' kWh';
-    document.getElementById('availVal').textContent = rows.length ? ((active / rows.length) * 100).toFixed(1) + '%' : '--%';
+
 }
 
 function renderMode() {
