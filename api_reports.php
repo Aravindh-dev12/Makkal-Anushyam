@@ -188,6 +188,12 @@ $frames = []; $start = time();
     return ['success' => true, 'frames' => count($frames), 'latest' => $latest, 'inv_names' => $invNames];
 }
 
+if (isset($_GET['live']) && $_GET['live'] === '1') {
+    $liveResult = fetchLiveData($plant);
+    echo json_encode($liveResult);
+    exit;
+}
+
 function buildBuckets($type, $date, $hourly = false, $invCount = 2) {
     $buckets = [];
     $interval = $hourly ? 3600 : 900;
@@ -207,11 +213,11 @@ function buildBuckets($type, $date, $hourly = false, $invCount = 2) {
             $t = date('H:i', $start);
             $row = [
                 'time_label'   => $t,
-                'radiation'    => 0,
-                'panel_temp'   => 0,
-                'ambient_temp' => 0,
-                'wind_speed'   => 0,
-                'humidity'     => 0,
+                'radiation' => null,
+                'panel_temp' => null,
+                'ambient_temp' => null,
+                'wind_speed' => null,
+                'humidity' => null,
                 'inv_total_kwh'=> 0,
                 'vcb_kwh'      => 0,
                 'vcb_kw'       => 0,
@@ -233,11 +239,11 @@ function buildBuckets($type, $date, $hourly = false, $invCount = 2) {
             $label = str_pad($i, 2, '0', STR_PAD_LEFT) . '-' . date('m-Y', strtotime($date . '-01'));
             $row = [
                 'time_label'   => $label,
-                'radiation'    => 0,
-                'panel_temp'   => 0,
-                'ambient_temp' => 0,
-                'wind_speed'   => 0,
-                'humidity'     => 0,
+                'radiation' => null,
+                'panel_temp' => null,
+                'ambient_temp' => null,
+                'wind_speed' => null,
+                'humidity' => null,
                 'inv_total_kwh'=> 0,
                 'vcb_kwh'      => 0,
                 'vcb_kw'       => 0,
@@ -323,7 +329,7 @@ if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
     } catch (Exception $e) {
         // Fallback with basic columns if table doesn't have all columns yet
         try {
-            $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, 0 as ambient_temp, wind_speed, 0 as humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
+            $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, NULL as ambient_temp, wind_speed, NULL as humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
             if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
         } catch (Exception $e2) {}
     }
