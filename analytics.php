@@ -708,7 +708,7 @@ function exportWmosExcel() {
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Live WebSocket WMOS/WMAS data received by Analytics' },
+        { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
         { Field: 'Actual Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
@@ -725,7 +725,7 @@ async function downloadSelectedExcel() {
         if (selectedSource === 'wmos:all') {
             requestDailyWmos();
             await waitForExportData(() => state.wmosHistory.length > 0);
-            if (!exportWmosExcel()) alert('No live WMOS/WMAS samples are available yet.');
+            if (!exportWmosExcel()) alert('No live WMOS samples are available yet.');
         } else {
             state.selectedInverter = selectedSource;
             requestDailyInverter();
