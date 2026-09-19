@@ -153,7 +153,7 @@ $frames = []; $start = time();
     }
     $ws->close();
 
-    $latest = ['vcb'=>[],'trafo'=>[],'wms'=>[]];
+    $latest = ['vcb'=>[],'trafo'=>[],'wmos'=>[]];
     $invRaw = [];
     foreach ($frames as $f) {
         $task = strtolower($f['task'] ?? $f['pageName'] ?? $f['type'] ?? '');
@@ -163,12 +163,12 @@ $frames = []; $start = time();
         $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
         $weatherSeen = [];
         $frameUnit = trim((string)($f['unit_id'] ?? $f['unitId'] ?? ''));
-        $isWeatherTask = ($task === 'wmos' || $task === 'wmas' || $task === 'weather');
+        $isWeatherTask = ($task === 'wmos');
         $isWeatherDevice = preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance|anemometer|velocity|windspeed/i', $dev.' '.$task);
         if (($frameUnit === '' || $frameUnit === $plant) && ($isWeatherTask || $isWeatherDevice)) {
             walkLiveWeatherValues($f, [$dev, $task], $weather, $weatherSeen);
             foreach ($weather as $weatherKey => $weatherValue) {
-                if ($weatherValue !== null) $latest['wms'][$weatherKey] = $weatherValue;
+                if ($weatherValue !== null) $latest['wmos'][$weatherKey] = $weatherValue;
             }
         }
         if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'inverter' || strpos($dev, 'inverter') !== false)) {
@@ -286,7 +286,7 @@ function buildBuckets($type, $date, $hourly = false, $invCount = 2) {
 function to15min($t) { $p = explode(':', $t); return $p[0] . ':' . str_pad(floor($p[1] / 15) * 15, 2, '0', STR_PAD_LEFT); }
 function toHour($t) { $p = explode(':', $t); return $p[0] . ':00'; }
 
-function ensureWeatherTables($conn) {
+function ensureWmosTable($conn) {
     @$conn->query("CREATE TABLE IF NOT EXISTS `weather_readings` (
         `id` INT AUTO_INCREMENT PRIMARY KEY,
         `plant_id` VARCHAR(50) NOT NULL,
@@ -309,21 +309,10 @@ function ensureWeatherTables($conn) {
         @$conn->query("ALTER TABLE `weather_readings` ADD `humidity` DECIMAL(5,1) DEFAULT 0 AFTER `wind_speed`");
     }
 
-    @$conn->query("CREATE TABLE IF NOT EXISTS `wms_readings` (
-        `id` INT AUTO_INCREMENT PRIMARY KEY,
-        `plant_id` VARCHAR(50) NOT NULL,
-        `radiation` DECIMAL(8,2) DEFAULT 0,
-        `panel_temp` DECIMAL(5,1) DEFAULT 0,
-        `ambient_temp` DECIMAL(5,1) DEFAULT 0,
-        `wind_speed` DECIMAL(5,2) DEFAULT 0,
-        `humidity` DECIMAL(5,1) DEFAULT 0,
-        `recorded_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX `idx_wms_plant` (`plant_id`),
-        INDEX `idx_wms_time` (`recorded_at`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    @$conn->query("
 }
 
-ensureWeatherTables($conn);
+ensureWmosTable($conn);
 
 // Determine inverter device names
 $invNames = [];
@@ -339,31 +328,23 @@ $isToday = ($date === date('Y-m-d'));
 $bucketFn = $chartMode ? 'toHour' : 'to15min';
 
 if ($type === 'daily') {
-    // 1. Fetch WMS Data (WMOS)
-    $wmsPlantClause = $plantClause;
-    $wmsRows = [];
+    // 1. Fetch WMOS data
+    $wmosPlantClause = $plantClause;
+    $wmosRows = [];
     
     // Try weather_readings first; never fall back to another plant.
     try {
-        $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
-if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
+        $wmosRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmosPlantClause ORDER BY recorded_at ASC");
+if ($wmosRes) while ($row = $wmosRes->fetch_assoc()) $wmosRows[] = $row;
     } catch (Exception $e) {
         // Fallback with basic columns if table doesn't have all columns yet
         try {
-            $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, NULL as ambient_temp, wind_speed, NULL as humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
-            if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
+            $wmosRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, NULL as ambient_temp, wind_speed, NULL as humidity FROM weather_readings WHERE DATE(recorded_at)='$date' $wmosPlantClause ORDER BY recorded_at ASC");
+            if ($wmosRes) while ($row = $wmosRes->fetch_assoc()) $wmosRows[] = $row;
         } catch (Exception $e2) {}
     }
 
-    // Try wms_readings only when this plant has no weather_readings.
-    if (empty($wmsRows)) {
-        try {
-            $wmsRes = $conn->query("SELECT DATE_FORMAT(recorded_at,'%H:%i') as bTime, radiation, panel_temp, ambient_temp, wind_speed, humidity FROM wms_readings WHERE DATE(recorded_at)='$date' $wmsPlantClause ORDER BY recorded_at ASC");
-if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
-        } catch (Exception $e3) {}
-    }
-
-    foreach ($wmsRows as $row) {
+    foreach ($wmosRows as $row) {
         $bt = $bucketFn($row['bTime']);
         if (isset($timeBuckets[$bt])) {
             $rad = (float)($row['radiation'] ?? 0);
@@ -442,19 +423,19 @@ if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
     $monthStart = date('Y-m-01', strtotime($date . '-01'));
     $nextMonthStart = date('Y-m-01', strtotime($monthStart . ' +1 month'));
 
-    // 1. Monthly WMS aggregates
-    $wmsMonthly = [];
+    // 1. Monthly WMOS aggregates
+    $wmosMonthly = [];
     try {
-        $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM weather_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
-        $wmsRes = $conn->query($wmsQuery);
-if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
+        $wmosQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM weather_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
+        $wmosRes = $conn->query($wmosQuery);
+if ($wmosRes) while ($row = $wmosRes->fetch_assoc()) $wmosMonthly[$row['report_day']] = $row;
     } catch (Exception $e) {}
 
-    if (empty($wmsMonthly)) {
+    if (empty($wmosMonthly)) {
         try {
-            $wmsQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM wms_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
-            $wmsRes = $conn->query($wmsQuery);
-if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day']] = $row;
+            $wmosQuery = "SELECT DATE(recorded_at) report_day, AVG(radiation) radiation, MAX(panel_temp) panel_temp, MAX(ambient_temp) ambient_temp, AVG(wind_speed) wind_speed, AVG(humidity) humidity FROM weather_readings WHERE recorded_at >= '$monthStart 00:00:00' AND recorded_at < '$nextMonthStart 00:00:00' $plantClause GROUP BY DATE(recorded_at)";
+            $wmosRes = $conn->query($wmosQuery);
+if ($wmosRes) while ($row = $wmosRes->fetch_assoc()) $wmosMonthly[$row['report_day']] = $row;
         } catch (Exception $e2) {}
     }
 
@@ -483,12 +464,12 @@ if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsMonthly[$row['report_day'
         $d = date('Y-m', strtotime($date . '-01')) . '-' . str_pad($i, 2, '0', STR_PAD_LEFT);
         $label = str_pad($i, 2, '0', STR_PAD_LEFT) . '-' . date('m-Y', strtotime($date . '-01'));
 
-        if (isset($wmsMonthly[$d])) {
-            $timeBuckets[$label]['radiation']    = round((float)$wmsMonthly[$d]['radiation'], 1);
-            $timeBuckets[$label]['panel_temp']   = round((float)$wmsMonthly[$d]['panel_temp'], 1);
-            $timeBuckets[$label]['ambient_temp'] = round((float)$wmsMonthly[$d]['ambient_temp'], 1);
-            $timeBuckets[$label]['wind_speed']   = round((float)$wmsMonthly[$d]['wind_speed'], 1);
-            $timeBuckets[$label]['humidity']     = round((float)$wmsMonthly[$d]['humidity'], 1);
+        if (isset($wmosMonthly[$d])) {
+            $timeBuckets[$label]['radiation']    = round((float)$wmosMonthly[$d]['radiation'], 1);
+            $timeBuckets[$label]['panel_temp']   = round((float)$wmosMonthly[$d]['panel_temp'], 1);
+            $timeBuckets[$label]['ambient_temp'] = round((float)$wmosMonthly[$d]['ambient_temp'], 1);
+            $timeBuckets[$label]['wind_speed']   = round((float)$wmosMonthly[$d]['wind_speed'], 1);
+            $timeBuckets[$label]['humidity']     = round((float)$wmosMonthly[$d]['humidity'], 1);
         }
 
         $rowInvSum = 0;
