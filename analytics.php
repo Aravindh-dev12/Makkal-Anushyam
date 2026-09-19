@@ -642,7 +642,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         }
 
         function renderWmasTrend() {
-            const sourceKey = wmasSelect?.value || '';
+            const sourceKey = selectedWmas || '';
             const source = WMOS_EXPORT_SOURCES[sourceKey];
             const raw = source ? Array.from(analyticsWmosHistory[sourceKey]?.values() || []).sort((a,b) => a.timestamp - b.timestamp) : [];
             const hasSelection = !!source;
