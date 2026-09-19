@@ -403,52 +403,73 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         }
         function handleWSDailyWeather(rows, fallbackDevice = '', fallbackTask = '') {
             if (!Array.isArray(rows) || !rows.length) return;
+            let changed = false;
             rows.forEach(r => {
-                const s = slot15Min(r.time || r.timestamp);
+                if (!r || typeof r !== 'object') return;
+                const rawTime = r.time || r.timestamp || r.ts || r.recorded_at || r.bTime || '';
+                const s = slot15Min(rawTime);
                 if (!s) return;
                 if (!weatherBuckets[s]) weatherBuckets[s] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
+
                 const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase().trim();
                 const task = String(r.task || fallbackTask || '').toLowerCase().trim();
-                const v = r.values && typeof r.values === 'object' ? r.values : {};
-                if (!/^wmos$/.test(task)) return;
+                const v = r.values && typeof r.values === 'object'
+                    ? r.values
+                    : (r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? r.data : r);
 
                 const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
                 const readExact = keys => {
                     const wanted = new Set(keys.map(normalizeKey));
-                    const key = Object.keys(v).find(k => wanted.has(normalizeKey(k)));
+                    const key = Object.keys(v || {}).find(k => wanted.has(normalizeKey(k)));
                     return key ? normalizeWeatherValue(v[key]) : null;
                 };
 
-                if (/pyranometer|pyrimeter/.test(dev)) {
-                    const value = readExact(['raw data']);
-                    if (value !== null) weatherBuckets[s].rad = value;
-                } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) {
-                    const value = readExact(['pannel temperature','panel temperature','module temperature']);
-                    if (value !== null) weatherBuckets[s].ptemp = value;
-                } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) {
-                    const value = readExact(['ambient temperature']);
-                    if (value !== null) weatherBuckets[s].atemp = value;
-                } else if (/^wind$|wind.*speed|anemometer/.test(dev)) {
-                    const value = readExact(['windspeed','wind speed']);
-                    if (value !== null) weatherBuckets[s].wind = value;
-                } else if (/^humidity$|humid/.test(dev)) {
-                    const value = readExact(['humidity','relative humidity']);
-                    if (value !== null) weatherBuckets[s].hum = value;
+                // Do not require task === "wmos": daily history responses can identify
+                // the weather device while using a different task/type field.
+                const setIfValue = (bucketKey, value) => {
+                    if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+                        weatherBuckets[s][bucketKey] = Number(value);
+                        changed = true;
+                    }
+                };
+
+                if (/pyranometer|pyrimeter|radiat|irradiance/.test(dev + ' ' + task)) {
+                    setIfValue('rad', readExact(['raw data','radiation','irradiance']));
+                } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev + ' ' + task)) {
+                    setIfValue('ptemp', readExact(['pannel temperature','panel temperature','module temperature']));
+                } else if (/ambient.*temp|^ambient$/.test(dev + ' ' + task)) {
+                    setIfValue('atemp', readExact(['ambient temperature','ambient temp']));
+                } else if (/wind|anemometer|windspeed|wind speed|velocity/.test(dev + ' ' + task)) {
+                    setIfValue('wind', readExact(['windspeed','wind speed','wind velocity','velocity']));
+                } else if (/humidity|humid/.test(dev + ' ' + task)) {
+                    setIfValue('hum', readExact(['humidity','relative humidity']));
                 }
             });
-            if (currentReportSection === 'wmos') renderWmosReportFromBuckets();
+            if (changed && currentReportSection === 'wmos') renderWmosReportFromBuckets();
         }
 
         function renderWmosLiveRow() {
             const time = new Date().toTimeString().slice(0,5);
-            weatherBuckets[slot15Min(time)] = {
-                rad: liveWeather.rad,
-                ptemp: liveWeather.ptemp,
-                atemp: liveWeather.atemp,
-                wind: liveWeather.wind,
-                hum: liveWeather.hum
-            };
-            renderWmosReportFromBuckets();
+            const slot = slot15Min(time);
+            if (!slot) return;
+            if (!weatherBuckets[slot]) weatherBuckets[slot] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
+
+            // Live packets must never erase historical values already loaded into this slot.
+            const liveMap = [
+                ['rad', liveWeather.rad],
+                ['ptemp', liveWeather.ptemp],
+                ['atemp', liveWeather.atemp],
+                ['wind', liveWeather.wind],
+                ['hum', liveWeather.hum]
+            ];
+            let changed = false;
+            liveMap.forEach(([key, value]) => {
+                if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+                    weatherBuckets[slot][key] = Number(value);
+                    changed = true;
+                }
+            });
+            if (changed) renderWmosReportFromBuckets();
         }
 
         function buildWmos15MinRows(rows = []) {
