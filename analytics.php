@@ -484,50 +484,72 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             });
         }
         function captureWmosValues(values, sourceTime, device = '', task = '') {
-            if (!values || typeof values !== 'object') return false;
-            const context = normalizeWmosMetricName(task + ' ' + device);
-            const valueKeys = Object.keys(values).map(normalizeWmosMetricName);
-            const weatherSignal =
-                /(?:^|\s)(?:wmos|wmas)(?:\s|$)|weather|pyranometer|pyrimeter|panel|pannel|ambient|wind|humidity|radiation|irradiance/.test(context) ||
-                valueKeys.some(key => /pyran|radiat|irradiance|pannel.*temp|panel.*temp|module.*temp|ambient.*temp|wind.*speed|humidity/.test(key));
-            if (!weatherSignal || (/inverter|^inv\b/.test(context) && !/(?:^|\s)(?:wmos|wmas|weather)(?:\s|$)/.test(context))) return false;
-
-            const rad = readWmosMetricValue(values, ['raw data', 'radiation', 'solar radiation', 'irradiance'], [/^raw data$/, /radiation/, /irradiance/, /pyran/]);
-            let panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/, /^temp data$/]);
-            let ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
-            // Match Makkal Home's device-context fallbacks for generic sensor keys.
+            if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
             const deviceText = normalizeWmosMetricName(device);
-            // Exact live SCADA Wind frame: device="Wind", values.windspeed.
-            let wind = null;
-            if (/^wind$|wind speed|anemometer/.test(deviceText)) {
-                const directWindKey = Object.keys(values).find(key => normalizeWmosMetricName(key) === 'windspeed' || normalizeWmosMetricName(key) === 'wind speed');
-                if (directWindKey) wind = wmosNumber(values[directWindKey]);
+
+            // Strict SCADA WMOS device mapping:
+            // Pyranometer -> raw data (radiation)
+            // pannel temperature -> pannel temperature
+            // Ambient Temperature -> Ambient temperature
+            // Wind -> windspeed
+            // Humidity -> humidity
+            let sourceKey = '';
+            let raw = null;
+            if (/pyranometer|pyrimeter/.test(deviceText)) {
+                sourceKey = 'wmos:pyranometer';
+                const key = Object.keys(values).find(k => normalizeWmosMetricName(k) === 'raw data');
+                raw = key ? values[key] : null;
+            } else if (/pannel.*temp|panel.*temp|module.*temp/.test(deviceText)) {
+                sourceKey = 'wmos:panel';
+                const key = Object.keys(values).find(k => ['pannel temperature','panel temperature','module temperature'].includes(normalizeWmosMetricName(k)));
+                raw = key ? values[key] : null;
+            } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(deviceText)) {
+                sourceKey = 'wmos:ambient';
+                const key = Object.keys(values).find(k => normalizeWmosMetricName(k) === 'ambient temperature');
+                raw = key ? values[key] : null;
+            } else if (/^wind$|wind.*speed|anemometer/.test(deviceText)) {
+                sourceKey = 'wmos:wind';
+                const key = Object.keys(values).find(k => ['windspeed','wind speed'].includes(normalizeWmosMetricName(k)));
+                raw = key ? values[key] : null;
+            } else if (/^humidity$|humid/.test(deviceText)) {
+                sourceKey = 'wmos:humidity';
+                const key = Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalizeWmosMetricName(k)));
+                raw = key ? values[key] : null;
+            } else {
+                return false;
             }
-            if (wind === null) wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'wind_speed', 'wind velocity', 'windvelocity', 'wind', 'speed', 'velocity', 'anemometer'], [/wind.*speed/, /windspeed/, /wind.*velocity/, /velocity.*wind/, /^wind$/, /anemometer/, /(^|\s)speed(?:\s|$)/, /velocity/]);
-            let humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
 
-            if (panel === null && /pannel|panel|module/.test(deviceText)) panel = readWmosMetricValue(values, [], [/temp/]);
-            if (ambient === null && /ambient/.test(deviceText)) ambient = readWmosMetricValue(values, [], [/temp/]);
-            if (wind === null && /wind|anemometer|anem/.test(deviceText)) wind = readWmosMetricValue(values, [], [/wind|speed|velocity|anemometer/]);
-            if (humidity === null && /humid/.test(deviceText)) humidity = readWmosMetricValue(values, [], [/hum/]);
-
-            let updated = false;
-            if (rad !== null) { setWmosPanelValue('wmos_rad', rad, 0); recordWmosHistory('wmos:pyranometer', rad, sourceTime, device || 'Pyranometer'); updated = true; }
-            if (panel !== null) { setWmosPanelValue('wmos_ptemp', panel, 1); recordWmosHistory('wmos:panel', panel, sourceTime, device || 'pannel temperature'); updated = true; }
-            if (ambient !== null) { setWmosPanelValue('wmos_atemp', ambient, 1); recordWmosHistory('wmos:ambient', ambient, sourceTime, device || 'Ambient Temperature'); updated = true; }
-            if (wind !== null) { setWmosPanelValue('wmos_wind', wind, 1); recordWmosHistory('wmos:wind', wind, sourceTime, device || 'Wind'); updated = true; }
-            if (humidity !== null) { setWmosPanelValue('wmos_hum', humidity, 1); recordWmosHistory('wmos:humidity', humidity, sourceTime, device || 'Humidity'); updated = true; }
-
-            if (updated) {
-                const now = Date.now();
-                aState.weather.lastReceivedAt = now;
-                aState.weather.lastSampleAt = sourceTime ? parseTelemetryTime(sourceTime).getTime() : now;
-                aState.weather.lastDevice = device || task || 'WMOS';
-                const sampleLabel = document.getElementById('wmosLastSample');
-                if (sampleLabel) sampleLabel.textContent = new Date(aState.weather.lastSampleAt).toLocaleTimeString('en-IN', { hour12: false });
-                updateWmosLiveStatus();
+            const value = wmosNumber(raw);
+            if (sourceKey === 'wmos:panel') {
+                // A real null panel reading must stay null; never substitute
+                // Pyranometer temp data or inverter temperature.
+                if (value === null) {
+                    setWmosPanelValue('wmos_ptemp', null, 1);
+                    return false;
+                }
+            } else if (value === null) {
+                return false;
             }
-            return updated;
+
+            const source = WMOS_EXPORT_SOURCES[sourceKey];
+            if (!source) return false;
+            setWmosPanelValue(source.elementId || ({
+                'wmos:pyranometer':'wmos_rad',
+                'wmos:panel':'wmos_ptemp',
+                'wmos:ambient':'wmos_atemp',
+                'wmos:wind':'wmos_wind',
+                'wmos:humidity':'wmos_hum'
+            }[sourceKey]), value, source.decimals);
+            recordWmosHistory(sourceKey, value, sourceTime, device || source.device);
+
+            const now = Date.now();
+            aState.weather.lastReceivedAt = now;
+            aState.weather.lastSampleAt = sourceTime ? parseTelemetryTime(sourceTime).getTime() : now;
+            aState.weather.lastDevice = device || task || 'WMOS';
+            const sampleLabel = document.getElementById('wmosLastSample');
+            if (sampleLabel) sampleLabel.textContent = new Date(aState.weather.lastSampleAt).toLocaleTimeString('en-IN', { hour12: false });
+            updateWmosLiveStatus();
+            return true;
         }
         function updateWmosLiveStatus() {
             const dot = document.getElementById('wmosLiveDot');
