@@ -549,7 +549,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
 
             if (currentReportSection === 'wmas') {
                 if (type === 'daily') {
-                    ws.send(JSON.stringify({ type: 'subscribe', unit_id: 'vinoba-velliyanai' }));
+                    ws.send(JSON.stringify({ type: 'subscribe', unit_id: plant }));
                     return requestWmasDailyHistory();
                 }
                 return false;
@@ -779,6 +779,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 if (wsReportTimeout) { clearTimeout(wsReportTimeout); wsReportTimeout = null; }
                 lastReportData = null;
                 weatherBuckets = {};
+                liveWmasUnitId = '';
                 if (type === 'daily' && selectedDate === localDateKey()) {
                     connectReportWS();
                     if (!requestWmasDailyHistory()) setTimeout(requestWmasDailyHistory, 800);
