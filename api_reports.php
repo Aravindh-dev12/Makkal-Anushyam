@@ -372,11 +372,11 @@ if ($wmsRes) while ($row = $wmsRes->fetch_assoc()) $wmsRows[] = $row;
             $wind = (float)($row['wind_speed'] ?? 0);
             $hum = (float)($row['humidity'] ?? 0);
 
-            if ($rad > 0) $timeBuckets[$bt]['radiation'] = $rad;
-            if ($ptemp > 0) $timeBuckets[$bt]['panel_temp'] = $ptemp;
-            if ($atemp > 0) $timeBuckets[$bt]['ambient_temp'] = $atemp;
-            if ($wind > 0) $timeBuckets[$bt]['wind_speed'] = $wind;
-            if ($hum > 0) $timeBuckets[$bt]['humidity'] = $hum;
+            if ($row['radiation'] !== null) $timeBuckets[$bt]['radiation'] = $rad;
+            if ($row['panel_temp'] !== null) $timeBuckets[$bt]['panel_temp'] = $ptemp;
+            if ($row['ambient_temp'] !== null) $timeBuckets[$bt]['ambient_temp'] = $atemp;
+            if ($row['wind_speed'] !== null) $timeBuckets[$bt]['wind_speed'] = $wind;
+            if ($row['humidity'] !== null) $timeBuckets[$bt]['humidity'] = $hum;
         }
     }
 
