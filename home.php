@@ -603,7 +603,13 @@
             const rad = read(['raw data','radiation','solar radiation','irradiance'], [/^raw data$/,/radiation/,/irradiance/,/pyran/]);
             let panel = read(['pannel temperature','panel temperature','module temperature'], [/pannel.*temp/,/panel.*temp/,/module.*temp/,/^temperature$/,/^temp$/,/^temp data$/]);
             let ambient = read(['ambient temperature'], [/ambient.*temp/]);
-            let wind = read(['windspeed','wind speed'], [/wind.*speed/,/^windspeed$/]);
+            // SCADA WMOS Wind payload is device="Wind" with values.windspeed.
+            let wind = null;
+            if (/^wind$|wind speed|anemometer/.test(normalize(device))) {
+                const directWindKey = Object.keys(values).find(key => normalize(key) === 'windspeed' || normalize(key) === 'wind speed');
+                if (directWindKey) wind = homeWsNumeric(values[directWindKey]);
+            }
+            if (wind === null) wind = read(['windspeed','wind speed','wind_speed','wind velocity','windvelocity','wind','speed','velocity'], [/wind.*speed/,/^windspeed$/,/^wind$/, /wind.*velocity/, /velocity.*wind/, /anemometer/,/(^|\\s)(speed|velocity)(?:\\s|$)/]);
             let humidity = read(['humidity','relative humidity'], [/humidity/]);
             if (panel === null && /pannel|panel|module/.test(dev)) panel = read([], [/temp/]);
             if (ambient === null && /ambient/.test(dev)) ambient = read([], [/temp/]);
