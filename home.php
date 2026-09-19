@@ -588,43 +588,67 @@
         function homeHandleWeather(values, device = '', task = '') {
             if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
             const dev = String(device || '').toLowerCase();
-            const tsk = String(task || '').toLowerCase();
             const normalize = value => String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-            const keys = Object.keys(values).map(normalize);
-            const weatherDevice = /pyranometer|pyrimeter|pannel|panel|module|ambient|wind|humid/i.test(dev);
-            const weatherTask = /^(wmos|wmas|weather)$/i.test(tsk.trim());
-            if (!weatherTask && !weatherDevice) return false;
-            const read = (direct, patterns = []) => {
-                const wanted = direct.map(normalize);
-                for (const [key, raw] of Object.entries(values)) { const norm = normalize(key); if (wanted.includes(norm)) { const n = homeWsNumeric(raw); if (n !== null) return n; } }
-                for (const [key, raw] of Object.entries(values)) { const norm = normalize(key); if (patterns.some(rx => rx.test(norm))) { const n = homeWsNumeric(raw); if (n !== null) return n; } }
-                return null;
-            };
-            const rad = read(['raw data','radiation','solar radiation','irradiance'], [/^raw data$/,/radiation/,/irradiance/,/pyran/]);
-            let panel = read(['pannel temperature','panel temperature','module temperature'], [/pannel.*temp/,/panel.*temp/,/module.*temp/,/^temperature$/,/^temp$/,/^temp data$/]);
-            let ambient = read(['ambient temperature'], [/ambient.*temp/]);
-            // SCADA WMOS Wind payload is device="Wind" with values.windspeed.
-            let wind = null;
-            if (/^wind$|wind speed|anemometer/.test(normalize(device))) {
-                const directWindKey = Object.keys(values).find(key => normalize(key) === 'windspeed' || normalize(key) === 'wind speed');
-                if (directWindKey) wind = homeWsNumeric(values[directWindKey]);
+            const deviceName = normalize(device);
+
+            // Read ONLY the metric owned by this WMOS device. Never infer one
+            // sensor's value from another sensor's field.
+            let metric = '';
+            let raw = null;
+            if (/pyranometer|pyrimeter/.test(deviceName)) {
+                metric = 'radiation';
+                raw = values['raw data'];
+                if (raw === undefined) {
+                    const key = Object.keys(values).find(k => normalize(k) === 'raw data');
+                    raw = key ? values[key] : null;
+                }
+            } else if (/pannel.*temp|panel.*temp|module.*temp/.test(deviceName)) {
+                metric = 'panel';
+                const key = Object.keys(values).find(k => normalize(k) === 'pannel temperature' || normalize(k) === 'panel temperature' || normalize(k) === 'module temperature');
+                raw = key ? values[key] : null;
+            } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(deviceName)) {
+                metric = 'ambient';
+                const key = Object.keys(values).find(k => normalize(k) === 'ambient temperature');
+                raw = key ? values[key] : null;
+            } else if (/^wind$|wind.*speed|anemometer/.test(deviceName)) {
+                metric = 'wind';
+                const key = Object.keys(values).find(k => normalize(k) === 'windspeed' || normalize(k) === 'wind speed');
+                raw = key ? values[key] : null;
+            } else if (/^humidity$|humid/.test(deviceName)) {
+                metric = 'humidity';
+                const key = Object.keys(values).find(k => normalize(k) === 'humidity' || normalize(k) === 'relative humidity');
+                raw = key ? values[key] : null;
+            } else {
+                // Only accept explicit WMOS task frames when the device itself
+                // clearly identifies the metric. Unknown devices are ignored.
+                return false;
             }
-            if (wind === null) wind = read(['windspeed','wind speed','wind_speed','wind velocity','windvelocity','wind','speed','velocity'], [/wind.*speed/,/^windspeed$/,/^wind$/, /wind.*velocity/, /velocity.*wind/, /anemometer/,/(^|\\s)(speed|velocity)(?:\\s|$)/]);
-            let humidity = read(['humidity','relative humidity'], [/humidity/]);
-            if (panel === null && /pannel|panel|module/.test(dev)) panel = read([], [/temp/]);
-            if (ambient === null && /ambient/.test(dev)) ambient = read([], [/temp/]);
-            if (wind === null && /wind/.test(dev)) wind = read([], [/wind|speed/]);
-            if (humidity === null && /humid/.test(dev)) humidity = read([], [/hum/]);
+
+            const numeric = raw === null || raw === undefined ? null : homeWsNumeric(raw);
             let updated = false;
-            if (rad !== null) { const el = document.getElementById('wmos_rad'); if (el) { el.textContent = Math.round(rad); el.dataset.live = 'true'; updated = true; } }
-            if (panel !== null) { const el = document.getElementById('wmos_ptemp'); if (el) { el.textContent = panel.toFixed(1); el.dataset.live = 'true'; updated = true; } }
-            if (ambient !== null) { const el = document.getElementById('wmos_atemp'); if (el) { el.textContent = ambient.toFixed(1); el.dataset.live = 'true'; updated = true; } }
-            if (wind !== null) { const el = document.getElementById('wmos_wind'); if (el) { el.textContent = wind.toFixed(1); el.dataset.live = 'true'; updated = true; } }
-            if (humidity !== null) { const el = document.getElementById('wmos_hum'); if (el) { el.textContent = humidity.toFixed(1); el.dataset.live = 'true'; updated = true; } }
+            if (metric === 'radiation' && numeric !== null) {
+                const el = document.getElementById('wmos_rad');
+                if (el) { el.textContent = Math.round(numeric); el.dataset.live = 'true'; updated = true; }
+            } else if (metric === 'panel') {
+                const el = document.getElementById('wmos_ptemp');
+                if (el) {
+                    el.textContent = numeric === null ? '--' : numeric.toFixed(1);
+                    el.dataset.live = numeric === null ? 'false' : 'true';
+                    updated = numeric !== null;
+                }
+            } else if (metric === 'ambient' && numeric !== null) {
+                const el = document.getElementById('wmos_atemp');
+                if (el) { el.textContent = numeric.toFixed(1); el.dataset.live = 'true'; updated = true; }
+            } else if (metric === 'wind' && numeric !== null) {
+                const el = document.getElementById('wmos_wind');
+                if (el) { el.textContent = numeric.toFixed(1); el.dataset.live = 'true'; updated = true; }
+            } else if (metric === 'humidity' && numeric !== null) {
+                const el = document.getElementById('wmos_hum');
+                if (el) { el.textContent = numeric.toFixed(1); el.dataset.live = 'true'; updated = true; }
+            }
             if (updated) homeWmasLastReceivedAt = Date.now();
             return updated;
         }
-
         function homeHandleWeatherMessage(message) {
             if (!message || typeof message !== 'object') return false;
             if (message.unit_id && String(message.unit_id) !== String(currentPlant)) return false;
