@@ -451,15 +451,48 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             renderWmosReportFromBuckets();
         }
 
+        function buildWmos15MinRows(rows = []) {
+            const bySlot = {};
+            (rows || []).forEach(row => {
+                if (!row) return;
+                const rawTime = row.time_label || row.bTime || row.time || '';
+                const slot = slot15Min(rawTime);
+                if (!slot) return;
+                if (!bySlot[slot]) bySlot[slot] = { time_label: slot, radiation: null, panel_temp: null, ambient_temp: null, wind_speed: null, humidity: null };
+                ['radiation','panel_temp','ambient_temp','wind_speed','humidity'].forEach(key => {
+                    const n = parseFloat(row[key]);
+                    if (Number.isFinite(n)) bySlot[slot][key] = n;
+                });
+            });
+
+            const fixedRows = [];
+            const startMinutes = 5 * 60;
+            const endMinutes = 20 * 60;
+            for (let minutes = startMinutes; minutes <= endMinutes; minutes += 15) {
+                const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+                const m = String(minutes % 60).padStart(2, '0');
+                const slot = h + ':' + m;
+                fixedRows.push(bySlot[slot] || {
+                    time_label: slot,
+                    radiation: null,
+                    panel_temp: null,
+                    ambient_temp: null,
+                    wind_speed: null,
+                    humidity: null
+                });
+            }
+            return fixedRows;
+        }
+
         function renderWmosReportFromBuckets() {
-            const rows = Object.keys(weatherBuckets).sort().map(time => ({
+            const rows = buildWmos15MinRows(Object.keys(weatherBuckets).map(time => ({
                 time_label: time,
                 radiation: weatherBuckets[time].rad,
                 panel_temp: weatherBuckets[time].ptemp,
                 ambient_temp: weatherBuckets[time].atemp,
                 wind_speed: weatherBuckets[time].wind,
                 humidity: weatherBuckets[time].hum
-            }));
+            })));
             lastReportData = {
                 type: 'daily',
                 data: rows,
@@ -682,8 +715,21 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             if (!result.success) throw new Error(result.error || result.message || 'Unknown server error');
 
             if (currentReportSection === 'wmos') {
-                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmos', source: 'Stored real WMOS telemetry' } };
-                renderWmosReportData(type, result.data || []);
+                const wmosRows = type === 'daily' ? buildWmos15MinRows(result.data || []) : (result.data || []);
+                if (type === 'daily') {
+                    weatherBuckets = {};
+                    wmosRows.forEach(row => {
+                        weatherBuckets[row.time_label] = {
+                            rad: row.radiation,
+                            ptemp: row.panel_temp,
+                            atemp: row.ambient_temp,
+                            wind: row.wind_speed,
+                            hum: row.humidity
+                        };
+                    });
+                }
+                lastReportData = { type, data: wmosRows, meta: { report_section: 'wmos', source: 'Stored real WMOS telemetry' } };
+                renderWmosReportData(type, wmosRows);
             } else {
                 lastReportData = result;
                 renderReportData(type, result.data, result.meta ? result.meta.inv_names : null);
@@ -791,10 +837,14 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 weatherBuckets = {};
                 liveWmosUnitId = '';
                 if (type === 'daily' && selectedDate === localDateKey()) {
-                    // Live-first: connect/render directly from the SCADA stream.
+                    // Keep the WMOS report on fixed 15-minute slots (05:00 through 20:00),
+                    // then layer live SCADA values onto the matching slot.
+                    try {
+                        await fetchReportFromAPI();
+                    } catch (err) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center"><div class="text-red-500 font-bold mb-1">Data Error</div><div class="text-gray-400 text-xs">' + err.message + '</div></td></tr>';
+                    }
                     connectReportWS();
-                    renderWmosLiveRow();
-                    // History is supplemental and must never delay live values.
                     setTimeout(() => { requestWmosDailyHistory(); }, 100);
                 } else {
                     try {
