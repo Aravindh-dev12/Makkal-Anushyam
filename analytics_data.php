@@ -69,17 +69,17 @@ try {
     $stmt->bind_param('sss', $plant, $start, $end);
     $stmt->execute();
     $rows = [];
-    $result = $stmt->get_result();
+    $stmt->bind_result($recordedAt, $radiation, $panelTemp, $ambientTemp, $windSpeed, $humidity, $deviceName);
 
-    while ($row = $result->fetch_assoc()) {
+    while ($stmt->fetch()) {
         $rows[] = [
-            'recorded_at' => $row['recorded_at'],
-            'radiation' => $row['radiation'] !== null ? (float)$row['radiation'] : null,
-            'panelTemp' => $row['panel_temp'] !== null ? (float)$row['panel_temp'] : null,
-            'ambientTemp' => $row['ambient_temp'] !== null ? (float)$row['ambient_temp'] : null,
-            'windSpeed' => $row['wind_speed'] !== null ? (float)$row['wind_speed'] : null,
-            'humidity' => $row['humidity'] !== null ? (float)$row['humidity'] : null,
-            'device_name' => $row['device_name'] ?? ''
+            'recorded_at' => $recordedAt,
+            'radiation' => $radiation !== null ? (float)$radiation : null,
+            'panelTemp' => $panelTemp !== null ? (float)$panelTemp : null,
+            'ambientTemp' => $ambientTemp !== null ? (float)$ambientTemp : null,
+            'windSpeed' => $windSpeed !== null ? (float)$windSpeed : null,
+            'humidity' => $humidity !== null ? (float)$humidity : null,
+            'device_name' => $deviceName ?? ''
         ];
     }
     $stmt->close();
