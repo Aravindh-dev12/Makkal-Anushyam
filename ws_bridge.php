@@ -280,7 +280,7 @@ function insertInverter($conn, $unit, $d) {
     $totalCO2     = floatval($v['total CO2 reduction'] ?? 0);
     $dailyHrs     = floatval($v['daily working hours'] ?? 0);
     $totalHrs     = floatval($v['total working hours'] ?? 0);
-    $stmt->bind_param('ssddddddddddddddddddiis',
+    $stmt->bind_param('ss' . str_repeat('d', 18) . 'iis',
         $unit, $dev, $pwr,
         $reactivePwr, $pf,
         $voltAB, $voltBC, $voltCA, $freq,
@@ -321,47 +321,64 @@ function insertTransformer($conn, $unit, $d) {
     $stmt->close();
 }
 
+function ensureWeatherSchema($conn) {
+    $alterations = [
+        "ADD COLUMN IF NOT EXISTS ambient_temp DECIMAL(5,1) DEFAULT 0 AFTER panel_temp",
+        "ADD COLUMN IF NOT EXISTS humidity DECIMAL(5,1) DEFAULT 0 AFTER wind_speed",
+        "ADD COLUMN IF NOT EXISTS device_name VARCHAR(100) DEFAULT '' AFTER plant_id",
+        "ADD COLUMN IF NOT EXISTS source_task VARCHAR(30) DEFAULT 'WMOS' AFTER device_name"
+    ];
+    foreach ($alterations as $alteration) {
+        if (!@$conn->query("ALTER TABLE weather_readings $alteration")) {
+            echo "[DB ERROR] Weather schema update failed: " . $conn->error . "\n";
+        }
+    }
+}
+
 function insertWeather($conn, $unit, $d) {
-    if (!$d['values']) return;
+    if (empty($d['values'])) return;
     $v = $d['values'];
-    $rad = floatval($v['raw data'] ?? ($v['radiation'] ?? 0));
-    $ptemp = floatval($v['pannel temperature'] ?? ($v['panel temperature'] ?? 0));
-    $atemp = floatval($v['Ambient temperature'] ?? ($v['ambient temperature'] ?? 0));
-    $wind = floatval($v['windspeed'] ?? ($v['wind speed'] ?? 0));
-    $hum = floatval($v['humidity'] ?? ($v['Humidity'] ?? 0));
 
-    // Try full 5-column insert first
-    $stmt = @$conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, ambient_temp, wind_speed, humidity) VALUES (?,?,?,?,?,?)");
-    if ($stmt) {
-        $stmt->bind_param('sddddd', $unit, $rad, $ptemp, $atemp, $wind, $hum);
-        if (!$stmt->execute()) {
-            // If failed (e.g. unknown column), fallback to 3-column
-            $stmt3 = $conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, wind_speed) VALUES (?,?,?,?)");
-            if ($stmt3) {
-                $stmt3->bind_param('sddd', $unit, $rad, $ptemp, $wind);
-                $stmt3->execute();
-                $stmt3->close();
+    $findValue = static function(array $values, array $keys, $default = null) {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $values) && $values[$key] !== '' && $values[$key] !== null) {
+                return $values[$key];
             }
-        } else {
-            echo "[DB] Weather (full) inserted for $unit\n";
         }
-        $stmt->close();
-    } else {
-        $stmt3 = $conn->prepare("INSERT INTO weather_readings (plant_id, radiation, panel_temp, wind_speed) VALUES (?,?,?,?)");
-        if ($stmt3) {
-            $stmt3->bind_param('sddd', $unit, $rad, $ptemp, $wind);
-            $stmt3->execute();
-            $stmt3->close();
-        }
+        return $default;
+    };
+
+    $rad = $findValue($v, ['raw data', 'radiation'], null);
+    $ptemp = $findValue($v, ['pannel temperature', 'panel temperature', 'module temperature'], null);
+    $atemp = $findValue($v, ['Ambient temperature', 'ambient temperature'], null);
+    $wind = $findValue($v, ['windspeed', 'wind speed'], null);
+    $hum = $findValue($v, ['humidity', 'Humidity', 'relative humidity'], null);
+    $device = trim((string)($d['device'] ?? ''));
+    $task = trim((string)($d['task'] ?? 'WMOS'));
+
+    $rad = $rad === null ? null : (float)$rad;
+    $ptemp = $ptemp === null ? null : (float)$ptemp;
+    $atemp = $atemp === null ? null : (float)$atemp;
+    $wind = $wind === null ? null : (float)$wind;
+    $hum = $hum === null ? null : (float)$hum;
+
+    $stmt = @$conn->prepare(
+        "INSERT INTO weather_readings
+         (plant_id, device_name, source_task, radiation, panel_temp, ambient_temp, wind_speed, humidity)
+         VALUES (?,?,?,?,?,?,?,?)"
+    );
+    if (!$stmt) {
+        echo "[DB ERROR] Weather prepare failed: " . $conn->error . "\n";
+        return;
     }
 
-    // Also mirror to wms_readings if table exists
-    $stmtWms = @$conn->prepare("INSERT INTO wms_readings (plant_id, radiation, panel_temp, ambient_temp, wind_speed, humidity) VALUES (?,?,?,?,?,?)");
-    if ($stmtWms) {
-        $stmtWms->bind_param('sddddd', $unit, $rad, $ptemp, $atemp, $wind, $hum);
-        @$stmtWms->execute();
-        $stmtWms->close();
+    $stmt->bind_param('sssddddd', $unit, $device, $task, $rad, $ptemp, $atemp, $wind, $hum);
+    if (!$stmt->execute()) {
+        echo "[DB ERROR] Weather execute failed: " . $stmt->error . "\n";
+    } else {
+        echo "[DB] WMOS weather inserted for $unit / $device\n";
     }
+    $stmt->close();
 }
 
 $lastTelemetryInsert = [];
@@ -382,6 +399,8 @@ function insertTelemetry($conn, $unit, $type, $value) {
     $stmt->close();
 }
 
+
+ensureWeatherSchema($conn);
 
 $plants = ['vinoba-velliyanai', 'makkalpower', 'anushyam'];
 
