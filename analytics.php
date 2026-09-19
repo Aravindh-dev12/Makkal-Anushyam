@@ -432,12 +432,8 @@ function consumeWmosFrame(values, device, task, sourceTime) {
     }
     if (!metric) return false;
     const value = exactWmosValue(metric, values);
-    if (metric === 'panelTemp' && value === null) {
-        state.wmos.panelTemp = null;
-        state.wmos.lastReceivedAt = Date.now();
-        state.wmos.lastSampleAt = telemetryDate(sourceTime).getTime();
-        return true;
-    }
+    // A WMOS device may send unrelated fields in a frame. Do not clear an
+    // already received live value just because the exact field is absent.
     if (value === null) return false;
     mergeWmosSample(metric, value, sourceTime, device);
     return true;
@@ -665,7 +661,11 @@ function xlsxWorkbook(sheetName, rows, summary) {
 
 function exportInverterExcel() {
     if (!state.selectedInverter) return false;
-    const rows = selectedInverterHistory().sort((a, b) => a.timestamp - b.timestamp).map(row => {
+
+    const selected = state.inverters[state.selectedInverter];
+    const history = selectedInverterHistory().slice().sort((a, b) => a.timestamp - b.timestamp);
+
+    const rows = history.map(row => {
         const output = row.powerKw == null ? '' : Number(row.powerKw).toFixed(3);
         const daily = row.dailyKwh == null ? '' : Number(row.dailyKwh).toFixed(3);
         return {
@@ -677,19 +677,68 @@ function exportInverterExcel() {
             'Sample Status': 'Live WebSocket sample'
         };
     });
+
+    // Always put the exact latest live reading first in its own sheet.
+    // This prevents the Excel download from looking like a historical-only report.
+    const snapshot = [{
+        Date: new Date().toLocaleDateString('en-IN'),
+        Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+        Inverter: selected?.wsName || state.selectedInverter,
+        'Output (kW)': selected?.outputKw == null ? '' : Number(selected.outputKw).toFixed(3),
+        'Daily Energy (kWh)': selected?.dailyGen == null ? '' : Number(selected.dailyGen).toFixed(3),
+        'Sample Status': selected?.lastSeen ? 'Latest live WebSocket value' : 'No live value received'
+    }];
+
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: state.inverters[state.selectedInverter]?.wsName || state.selectedInverter },
+        { Field: 'Selected Source', Value: selected?.wsName || state.selectedInverter },
         { Field: 'Export Type', Value: 'Live WebSocket data received by Analytics' },
-        { Field: 'Actual Samples', Value: rows.length },
+        { Field: 'Latest Live Reading', Value: selected?.lastSeen ? new Date(selected.lastSeen).toLocaleString('en-IN', { hour12: false }) : 'Not received' },
+        { Field: 'Historical Live Samples', Value: rows.length },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
-    return xlsxWorkbook('Inverter Live Data', rows, summary);
+
+    const wb = XLSX.utils.book_new();
+    const summarySheet = XLSX.utils.json_to_sheet(summary);
+    summarySheet['!cols'] = [{ wch: 28 }, { wch: 48 }];
+    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+    const liveSheet = XLSX.utils.json_to_sheet(snapshot);
+    liveSheet['!cols'] = Object.keys(snapshot[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
+    XLSX.utils.book_append_sheet(wb, liveSheet, 'Current Live');
+
+    if (rows.length) {
+        const historySheet = XLSX.utils.json_to_sheet(rows);
+        historySheet['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
+        XLSX.utils.book_append_sheet(wb, historySheet, 'Live History');
+    }
+
+    XLSX.writeFile(wb, currentPlant + '_Inverter_Live_' + todayKey() + '.xlsx');
+    return true;
 }
 
 function exportWmosExcel() {
     const sourceRows = state.wmosHistory.slice().sort((a, b) => a.timestamp - b.timestamp);
-    if (!sourceRows.length) return false;
+
+    // One row containing all five WMOS measurements at the moment of download.
+    // Each metric keeps its own sample time because the five devices can report
+    // a few seconds apart.
+    const snapshot = [{
+        Date: new Date().toLocaleDateString('en-IN'),
+        Time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
+        'Radiation (W/m²)': state.wmos.radiation ?? '',
+        'Panel Temperature (°C)': state.wmos.panelTemp ?? '',
+        'Ambient Temperature (°C)': state.wmos.ambientTemp ?? '',
+        'Wind Speed (m/s)': state.wmos.windSpeed ?? '',
+        'Humidity (%RH)': state.wmos.humidity ?? '',
+        'Radiation Sample Time': state.wmosHistory.at(-1)?.radiation_sample_time ? new Date(state.wmosHistory.at(-1).radiation_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
+        'Panel Sample Time': state.wmosHistory.at(-1)?.panelTemp_sample_time ? new Date(state.wmosHistory.at(-1).panelTemp_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
+        'Ambient Sample Time': state.wmosHistory.at(-1)?.ambientTemp_sample_time ? new Date(state.wmosHistory.at(-1).ambientTemp_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
+        'Wind Sample Time': state.wmosHistory.at(-1)?.windSpeed_sample_time ? new Date(state.wmosHistory.at(-1).windSpeed_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
+        'Humidity Sample Time': state.wmosHistory.at(-1)?.humidity_sample_time ? new Date(state.wmosHistory.at(-1).humidity_sample_time).toLocaleTimeString('en-IN', { hour12: false }) : '',
+        'Reading Type': 'Current live snapshot - all five WMOS values combined'
+    }];
+
     const rows = sourceRows.map(row => ({
         Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
         Time: new Date(row.timestamp).toLocaleTimeString('en-IN', { hour12: false }),
@@ -705,15 +754,37 @@ function exportWmosExcel() {
         'Humidity Device': row.humidity_device ?? '',
         'Reading Type': 'Actual live WebSocket samples merged by minute'
     }));
+
+    const hasLiveValue = Object.values(state.wmos).some(v => typeof v === 'number' && Number.isFinite(v));
+    if (!hasLiveValue && !sourceRows.length) return false;
+
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
         { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
         { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
-        { Field: 'Actual Weather Rows', Value: rows.length },
+        { Field: 'Current Snapshot', Value: 'All five WMOS measurements combined into one row' },
+        { Field: 'Historical Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
-    return xlsxWorkbook('WMOS All Live Data', rows, summary);
+
+    const wb = XLSX.utils.book_new();
+    const summarySheet = XLSX.utils.json_to_sheet(summary);
+    summarySheet['!cols'] = [{ wch: 28 }, { wch: 52 }];
+    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+    const liveSheet = XLSX.utils.json_to_sheet(snapshot);
+    liveSheet['!cols'] = Object.keys(snapshot[0]).map(k => ({ wch: Math.min(34, Math.max(14, k.length + 2)) }));
+    XLSX.utils.book_append_sheet(wb, liveSheet, 'Current Live');
+
+    if (rows.length) {
+        const historySheet = XLSX.utils.json_to_sheet(rows);
+        historySheet['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
+        XLSX.utils.book_append_sheet(wb, historySheet, 'Live History');
+    }
+
+    XLSX.writeFile(wb, currentPlant + '_WMOS_All_Live_' + todayKey() + '.xlsx');
+    return true;
 }
 
 async function downloadSelectedExcel() {
