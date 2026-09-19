@@ -322,15 +322,25 @@ function insertTransformer($conn, $unit, $d) {
 }
 
 function ensureWeatherSchema($conn) {
-    $alterations = [
-        "ADD COLUMN IF NOT EXISTS ambient_temp DECIMAL(5,1) DEFAULT 0 AFTER panel_temp",
-        "ADD COLUMN IF NOT EXISTS humidity DECIMAL(5,1) DEFAULT 0 AFTER wind_speed",
-        "ADD COLUMN IF NOT EXISTS device_name VARCHAR(100) DEFAULT '' AFTER plant_id",
-        "ADD COLUMN IF NOT EXISTS source_task VARCHAR(30) DEFAULT 'WMOS' AFTER device_name"
+    $columns = [];
+    $result = @$conn->query("SHOW COLUMNS FROM weather_readings");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $columns[(string)$row['Field']] = true;
+        }
+    }
+
+    $required = [
+        'ambient_temp' => "ALTER TABLE weather_readings ADD COLUMN ambient_temp DECIMAL(5,1) DEFAULT 0 AFTER panel_temp",
+        'humidity' => "ALTER TABLE weather_readings ADD COLUMN humidity DECIMAL(5,1) DEFAULT 0 AFTER wind_speed",
+        'device_name' => "ALTER TABLE weather_readings ADD COLUMN device_name VARCHAR(100) DEFAULT '' AFTER plant_id",
+        'source_task' => "ALTER TABLE weather_readings ADD COLUMN source_task VARCHAR(30) DEFAULT 'WMOS' AFTER device_name"
     ];
-    foreach ($alterations as $alteration) {
-        if (!@$conn->query("ALTER TABLE weather_readings $alteration")) {
-            echo "[DB ERROR] Weather schema update failed: " . $conn->error . "\n";
+
+    foreach ($required as $name => $sql) {
+        if (isset($columns[$name])) continue;
+        if (!@$conn->query($sql)) {
+            echo "[DB ERROR] Weather schema update failed for $name: " . $conn->error . "\n";
         }
     }
 }
