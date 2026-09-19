@@ -587,44 +587,42 @@
 
         function homeHandleWeather(values, device = '', task = '') {
             if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
-            const dev = String(device || '').toLowerCase();
             const normalize = value => String(value || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
             const deviceName = normalize(device);
+            const taskName = normalize(task);
+            const isWeatherTask = /^(wmos|wmas|weather)$/.test(taskName);
 
-            // Read ONLY the metric owned by this WMOS device. Never infer one
-            // sensor's value from another sensor's field.
+            // Use the WMOS device name first. If the gateway omits it, fall back
+            // to the exact field names used by the WMOS telemetry payload.
             let metric = '';
-            let raw = null;
-            if (/pyranometer|pyrimeter/.test(deviceName)) {
-                metric = 'radiation';
-                raw = values['raw data'];
-                if (raw === undefined) {
-                    const key = Object.keys(values).find(k => normalize(k) === 'raw data');
-                    raw = key ? values[key] : null;
-                }
-            } else if (/pannel.*temp|panel.*temp|module.*temp/.test(deviceName)) {
-                metric = 'panel';
-                const key = Object.keys(values).find(k => normalize(k) === 'pannel temperature' || normalize(k) === 'panel temperature' || normalize(k) === 'module temperature');
-                raw = key ? values[key] : null;
-            } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(deviceName)) {
-                metric = 'ambient';
-                const key = Object.keys(values).find(k => normalize(k) === 'ambient temperature');
-                raw = key ? values[key] : null;
-            } else if (/^wind$|wind.*speed|anemometer/.test(deviceName)) {
-                metric = 'wind';
-                const key = Object.keys(values).find(k => normalize(k) === 'windspeed' || normalize(k) === 'wind speed');
-                raw = key ? values[key] : null;
-            } else if (/^humidity$|humid/.test(deviceName)) {
-                metric = 'humidity';
-                const key = Object.keys(values).find(k => normalize(k) === 'humidity' || normalize(k) === 'relative humidity');
-                raw = key ? values[key] : null;
-            } else {
-                // Only accept explicit WMOS task frames when the device itself
-                // clearly identifies the metric. Unknown devices are ignored.
-                return false;
-            }
+            if (/pyranometer|pyrimeter/.test(deviceName)) metric = 'radiation';
+            else if (/pannel.*temp|panel.*temp|module.*temp/.test(deviceName)) metric = 'panel';
+            else if (/^ambient(?: temperature)?$|ambient.*temp/.test(deviceName)) metric = 'ambient';
+            else if (/^wind$|wind.*speed|anemometer/.test(deviceName)) metric = 'wind';
+            else if (/^humidity$|humid/.test(deviceName)) metric = 'humidity';
 
+            const aliases = {
+                radiation: ['raw data', 'radiation', 'irradiance'],
+                panel: ['pannel temperature', 'panel temperature', 'module temperature'],
+                ambient: ['Ambient temperature', 'ambient temperature', 'ambient temp'],
+                wind: ['windspeed', 'wind speed', 'wind velocity'],
+                humidity: ['humidity', 'Humidity', 'relative humidity']
+            };
+
+            if (!metric && isWeatherTask) {
+                for (const candidate of Object.keys(aliases)) {
+                    const wanted = new Set(aliases[candidate].map(normalize));
+                    const key = Object.keys(values).find(k => wanted.has(normalize(k)));
+                    if (key) { metric = candidate; break; }
+                }
+            }
+            if (!metric) return false;
+
+            const wanted = new Set(aliases[metric].map(normalize));
+            const matchedKey = Object.keys(values).find(k => wanted.has(normalize(k)));
+            const raw = matchedKey ? values[matchedKey] : null;
             const numeric = raw === null || raw === undefined ? null : homeWsNumeric(raw);
+
             let updated = false;
             if (metric === 'radiation' && numeric !== null) {
                 const el = document.getElementById('wmos_rad');
