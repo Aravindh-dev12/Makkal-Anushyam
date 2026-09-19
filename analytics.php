@@ -113,7 +113,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     </div>
                 </div>
 
-                <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+                <section id="outputTrendSection" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
                     <div class="flex flex-col sm:flex-row sm:items-end gap-4 mb-5">
                         <div class="min-w-0">
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Today Data</p>
@@ -129,21 +129,18 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                                 <i class="fa-solid fa-file-excel"></i>
                                 <span>Export Excel</span>
                             </button>
-                            <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
-                                <span class="block mb-1 text-right">Live Inverter</span>
-                                <select id="analyticsInverterSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="">Waiting for live inverter...</option>
-                                </select>
-                            </label>
-                            <label class="text-xs font-semibold text-slate-500 min-w-[180px] sm:min-w-[210px]">
-                                <span class="block mb-1 text-right">Live WMAS</span>
-                                <select id="analyticsWmasSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                                    <option value="">Select WMAS Data</option>
-                                    <option value="wmos:pyranometer">Radiation</option>
-                                    <option value="wmos:panel">Panel Temperature</option>
-                                    <option value="wmos:ambient">Ambient Temperature</option>
-                                    <option value="wmos:wind">Wind Speed</option>
-                                    <option value="wmos:humidity">Humidity</option>
+                            <label class="text-xs font-semibold text-slate-500 min-w-[220px] sm:min-w-[280px]">
+                                <span class="block mb-1 text-right">Live Data Source</span>
+                                <select id="analyticsSourceSelect" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Select Inverter / WMAS</option>
+                                    <optgroup label="Inverters"></optgroup>
+                                    <optgroup label="WMAS / WMOS">
+                                        <option value="wmos:pyranometer">Radiation</option>
+                                        <option value="wmos:panel">Panel Temperature</option>
+                                        <option value="wmos:ambient">Ambient Temperature</option>
+                                        <option value="wmos:wind">Wind Speed</option>
+                                        <option value="wmos:humidity">Humidity</option>
+                                    </optgroup>
                                 </select>
                             </label>
                         </div>
@@ -169,7 +166,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     </div>
                 </section>
 
-                <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <section id="wmasTrendSection" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex flex-col sm:flex-row sm:items-end gap-4 mb-5">
                         <div class="min-w-0">
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Today Data</p>
@@ -259,14 +256,14 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
         let selectedInverter = '';
         let selectedWmas = '';
+        let selectedSource = '';
         let liveWmasUnitId = '';
         let analyticsSocket = null;
         let analyticsWmosSocket = null;
         let lastInverterOptionsKey = '';
         let outputTrendChart = null;
         let wmasTrendChart = null;
-        const inverterSelect = document.getElementById('analyticsInverterSelect');
-        const wmasSelect = document.getElementById('analyticsWmasSelect');
+        const sourceSelect = document.getElementById('analyticsSourceSelect');
         const analyticsLiveLabel = document.getElementById('analyticsLiveLabel');
         const exportButton = document.getElementById('exportAnalyticsExcel');
         const generateExcelButton = document.getElementById('generateAnalyticsExcel');
@@ -329,17 +326,31 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             populateAnalyticsInverterOptions();
         }
         function populateAnalyticsInverterOptions() {
-            if (!inverterSelect) return;
-            const current = inverterSelect.value || selectedInverter || '';
-            const names = Object.keys(aState.inverters).sort((a, b) => { const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10); const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10); return numA - numB || a.localeCompare(b); });
+            if (!sourceSelect) return;
+            const current = selectedSource || sourceSelect.value || '';
+            const names = Object.keys(aState.inverters).sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10);
+                const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10);
+                return numA - numB || a.localeCompare(b);
+            });
             const optionsKey = names.join('|');
             if (optionsKey === lastInverterOptionsKey) return;
             lastInverterOptionsKey = optionsKey;
-            inverterSelect.innerHTML = names.length
-                ? ['<option value="">Select Inverter</option>', ...names.map(name => '<option value="' + name + '">' + inverterLabel(name) + '</option>')].join('')
-                : '<option value="">Waiting for live inverter...</option>';
-            inverterSelect.value = names.includes(current) ? current : '';
-            selectedInverter = inverterSelect.value;
+            sourceSelect.innerHTML = [
+                '<option value="">Select Inverter / WMAS</option>',
+                '<optgroup label="Inverters">',
+                ...names.map(name => '<option value="' + name.replace(/"/g, '&quot;') + '">' + inverterLabel(name) + '</option>'),
+                '</optgroup>',
+                '<optgroup label="WMAS / WMOS">',
+                '<option value="wmos:pyranometer">Radiation</option>',
+                '<option value="wmos:panel">Panel Temperature</option>',
+                '<option value="wmos:ambient">Ambient Temperature</option>',
+                '<option value="wmos:wind">Wind Speed</option>',
+                '<option value="wmos:humidity">Humidity</option>',
+                '</optgroup>'
+            ].join('');
+            sourceSelect.value = current && (names.includes(current) || WMOS_EXPORT_SOURCES[current]) ? current : '';
+            selectedSource = sourceSelect.value || '';
         }
 
         function readDirectNumber(values, keys) { for (const key of keys) { if (!Object.prototype.hasOwnProperty.call(values || {}, key)) continue; const raw = values[key]; if (raw === null || raw === undefined || raw === '') continue; const n = parseFloat(raw); if (Number.isFinite(n)) return n; } return null; }
@@ -435,7 +446,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             if (/pannel.*temp|panel.*temp|module.*temp/.test(name)) return 'wmos:panel';
             if (/ambient.*temp/.test(name)) return 'wmos:ambient';
             if (/humidity/.test(name)) return 'wmos:humidity';
-            if (/^wind$|wind.*speed/.test(name)) return 'wmos:wind';
+            if (/^wind$|wind.*speed|wind.*velocity|velocity.*wind|anemometer|^speed$|^velocity$/.test(name)) return 'wmos:wind';
             return '';
         }
         function readWmosMetricValue(values, directKeys, patterns = []) {
@@ -484,14 +495,14 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             const rad = readWmosMetricValue(values, ['raw data', 'radiation', 'solar radiation', 'irradiance'], [/^raw data$/, /radiation/, /irradiance/, /pyran/]);
             let panel = readWmosMetricValue(values, ['pannel temperature', 'panel temperature', 'module temperature'], [/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temperature$/, /^temp$/, /^temp data$/]);
             let ambient = readWmosMetricValue(values, ['Ambient temperature', 'ambient temperature'], [/ambient.*temp/]);
-            let wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'Wind Speed'], [/wind.*speed/, /^windspeed$/]);
+            let wind = readWmosMetricValue(values, ['windspeed', 'wind speed', 'wind_speed', 'wind velocity', 'windvelocity', 'wind', 'speed', 'velocity', 'anemometer'], [/wind.*speed/, /windspeed/, /wind.*velocity/, /velocity.*wind/, /^wind$/, /anemometer/, /(^|\s)speed(?:\s|$)/, /velocity/]);
             let humidity = readWmosMetricValue(values, ['humidity', 'Humidity', 'relative humidity'], [/humidity/]);
 
             // Match Makkal Home's device-context fallbacks for generic sensor keys.
             const deviceText = normalizeWmosMetricName(device);
             if (panel === null && /pannel|panel|module/.test(deviceText)) panel = readWmosMetricValue(values, [], [/temp/]);
             if (ambient === null && /ambient/.test(deviceText)) ambient = readWmosMetricValue(values, [], [/temp/]);
-            if (wind === null && /wind/.test(deviceText)) wind = readWmosMetricValue(values, [], [/wind|speed/]);
+            if (wind === null && /wind|anemometer|anem/.test(deviceText)) wind = readWmosMetricValue(values, [], [/wind|speed|velocity|anemometer/]);
             if (humidity === null && /humid/.test(deviceText)) humidity = readWmosMetricValue(values, [], [/hum/]);
 
             let updated = false;
@@ -545,72 +556,45 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             if (!message || typeof message !== 'object') return;
             const messageUnit = analyticsMessageUnitId(message);
             const messageTask = message.task || message.pageName || message.type || '';
-            const baseDevice = message.device || message.deviceName || (/^inverter$/i.test(String(message.task || message.pageName || '')) ? 'Inverter' : '');
-            const weatherContext = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(messageTask) + ' ' + String(baseDevice));
+            const baseDevice = message.device || message.deviceName || message.sensor || message.name || '';
+            const weatherContext = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance|anemometer|wind\s*speed|wind\s*velocity/i.test(String(messageTask) + ' ' + String(baseDevice));
             if (messageUnit && messageUnit !== wsUnitId && !weatherContext) return;
             if (weatherContext && messageUnit) liveWmasUnitId = messageUnit;
-            const defaultTime = message.time || message.timestamp || message.ts || '';
+            const defaultTime = message.time || message.timestamp || message.ts || message.recorded_at || '';
             let updated = false;
-
             const consume = (values, device, task, time) => {
                 if (!values || typeof values !== 'object' || Array.isArray(values)) return;
                 updated = captureWmosValues(values, time || defaultTime, device || baseDevice, task || messageTask) || updated;
             };
-
-            // Direct values payload.
-            consume(message.values, baseDevice, messageTask, defaultTime);
-
-            // Data can be a single object or an array of device rows.
-            const data = message.data;
-            const rows = Array.isArray(data) ? data : (data && typeof data === 'object' ? [data] : []);
-            rows.forEach(row => {
-                if (!row || typeof row !== 'object') return;
-                const rowUnit = analyticsMessageUnitId(row);
-                if (rowUnit && rowUnit !== wsUnitId) return;
-                const device = row.device || row.deviceName || row.sensor || row.name || baseDevice;
-                const task = row.task || row.pageName || row.type || messageTask;
-                const time = row.time || row.timestamp || row.ts || row.recorded_at || defaultTime;
-                const values = row.values && typeof row.values === 'object'
-                    ? row.values
-                    : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
-                        ? row.data
-                        : row;
-                consume(values, device, task, time);
-            });
-
-            // A few gateway payloads wrap readings in payload/result.
-            for (const containerKey of ['payload', 'result']) {
-                const container = message[containerKey];
-                if (!container || typeof container !== 'object' || Array.isArray(container)) continue;
-                const nestedRows = Array.isArray(container.data) ? container.data : (container.data && typeof container.data === 'object' ? [container.data] : []);
-                consume(container.values, container.device || container.deviceName || baseDevice, container.task || container.pageName || messageTask, container.time || container.timestamp || defaultTime);
-                nestedRows.forEach(row => {
-                    if (!row || typeof row !== 'object') return;
-                    const rowUnit = analyticsMessageUnitId(row);
-                    if (rowUnit && rowUnit !== wsUnitId) return;
-                    const device = row.device || row.deviceName || row.sensor || row.name || container.device || baseDevice;
-                    const task = row.task || row.pageName || row.type || container.task || messageTask;
-                    const time = row.time || row.timestamp || row.ts || row.recorded_at || container.time || container.timestamp || defaultTime;
-                    const values = row.values && typeof row.values === 'object'
-                        ? row.values
-                        : row.data && typeof row.data === 'object' && !Array.isArray(row.data)
-                            ? row.data
-                            : row;
-                    consume(values, device, task, time);
-                });
-            }
-
+            const walk = (node, inheritedDevice = baseDevice, inheritedTask = messageTask, inheritedTime = defaultTime, depth = 0) => {
+                if (!node || typeof node !== 'object' || depth > 7) return;
+                const nodeDevice = node.device || node.deviceName || node.sensor || node.name || inheritedDevice;
+                const nodeTask = node.task || node.pageName || node.type || inheritedTask;
+                const nodeTime = node.time || node.timestamp || node.ts || node.recorded_at || inheritedTime;
+                if (node.values && typeof node.values === 'object' && !Array.isArray(node.values)) consume(node.values, nodeDevice, nodeTask, nodeTime);
+                if (node.data && typeof node.data === 'object') {
+                    if (Array.isArray(node.data)) node.data.forEach(row => walk(row, nodeDevice, nodeTask, nodeTime, depth + 1));
+                    else walk(node.data, nodeDevice, nodeTask, nodeTime, depth + 1);
+                }
+                if (node.payload && typeof node.payload === 'object') walk(node.payload, nodeDevice, nodeTask, nodeTime, depth + 1);
+                if (node.result && typeof node.result === 'object') walk(node.result, nodeDevice, nodeTask, nodeTime, depth + 1);
+                if (!node.values && !node.data && !node.payload && !node.result) consume(node, nodeDevice, nodeTask, nodeTime);
+            };
+            if (message.values && typeof message.values === 'object') consume(message.values, baseDevice, messageTask, defaultTime);
+            walk(message.data, baseDevice, messageTask, defaultTime, 0);
+            walk(message.payload, baseDevice, messageTask, defaultTime, 0);
+            walk(message.result, baseDevice, messageTask, defaultTime, 0);
             if (updated) updateWmosLiveStatus();
         }
 
         function requestSelectedWmosToday() {
-            const source = WMOS_EXPORT_SOURCES[wmasSelect?.value || ''];
+            const source = WMOS_EXPORT_SOURCES[selectedWmas || ''];
             if (!source || !analyticsSocket || analyticsSocket.readyState !== WebSocket.OPEN) return;
             analyticsSocket.send(JSON.stringify({ type: 'get_daily_data', unit_id: liveWmasUnitId || LIVE_WMOS_UNIT_ID, device: source.device, date: todayKey() }));
         }
 
         function renderWmasLiveStatus() {
-            const sourceKey = wmasSelect?.value || '';
+            const sourceKey = selectedWmas || '';
             const latestSource = sourceKey
                 ? Array.from(analyticsWmosHistory[sourceKey]?.values() || []).sort((a,b) => b.timestamp - a.timestamp)[0]
                 : null;
@@ -647,6 +631,14 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     plugins: { legend: { display: false }, tooltip: { callbacks: { label(context) { return 'WMAS: ' + Number(context.parsed.y || 0).toFixed(2) + ' ' + (latestWmasUnit?.textContent || ''); } } } }
                 }
             });
+        }
+
+        function renderAnalyticsSourceMode() {
+            const showWmas = !!selectedWmas;
+            document.getElementById('outputTrendSection')?.classList.toggle('hidden', showWmas);
+            document.getElementById('wmasTrendSection')?.classList.toggle('hidden', !showWmas);
+            if (showWmas) renderWmasTrend();
+            else renderOutputTrend();
         }
 
         function renderWmasTrend() {
@@ -707,7 +699,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             outputTrendChart=new Chart(canvas.getContext('2d'),{type:'line',data:{labels:[],datasets:[{label:'Output (kW)',data:[],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.12)',pointBackgroundColor:'#2563eb',pointBorderColor:'#ffffff',pointRadius:2,pointHoverRadius:5,borderWidth:2.5,tension:.28,spanGaps:true,fill:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{type:'category',offset:false,grid:{display:false},ticks:{color:'#64748b',autoSkip:true,maxTicksLimit:14,maxRotation:0,minRotation:0,font:{size:10}},title:{display:true,text:'Time',color:'#64748b',font:{size:10,weight:'bold'}}},y:{beginAtZero:true,grid:{color:'#e2e8f0'},ticks:{color:'#64748b',font:{size:10}},title:{display:true,text:'Output (kW)',color:'#64748b',font:{size:10,weight:'bold'}}}},plugins:{legend:{display:false},tooltip:{callbacks:{label(context){return`Output: ${Number(context.parsed.y||0).toFixed(2)} kW`;}}}}}});
         }
         function renderOutputTrend() {
-            const rows=displayedOutputRows(),hasSelection=!!selectedInverter,hasGeneration=rows.length>0; emptyState.classList.toggle('hidden',hasSelection&&hasGeneration);
+            const rows=displayedOutputRows(),hasSelection=!!selectedInverter&&!selectedWmas,hasGeneration=rows.length>0; emptyState.classList.toggle('hidden',hasSelection&&hasGeneration);
             if(!hasSelection)emptyState.textContent='Select an inverter to load today’s output trend.';else if(!hasGeneration)emptyState.textContent='Waiting for this inverter to start generating output today.';
             exportButton.disabled=!hasSelection||!hasGeneration;
             if (!selectedInverter && !selectedWmas) generateExcelButton.disabled = true;
@@ -838,7 +830,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
         function waitForHistory(test,timeoutMs=3500){return new Promise(resolve=>{if(test()){resolve(true);return;}const started=Date.now(),timer=setInterval(()=>{if(test()){clearInterval(timer);resolve(true);}else if(Date.now()-started>=timeoutMs){clearInterval(timer);resolve(false);}},100);});}
 
         async function generateSelectedAnalyticsExcel(){
-            const selected = wmasSelect?.value || inverterSelect?.value || '';
+            const selected = sourceSelect?.value || selectedSource || '';
             if (!selected) return;
             const oldHtml = generateExcelButton.innerHTML;
             generateExcelButton.disabled = true;
@@ -857,28 +849,31 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 }
             } finally {
                 generateExcelButton.innerHTML = oldHtml;
-                generateExcelButton.disabled = !inverterSelect?.value && !wmasSelect?.value;
+                generateExcelButton.disabled = !sourceSelect?.value;
             }
         }
 
-        inverterSelect?.addEventListener('change', () => {
-            selectedInverter = inverterSelect.value || '';
-            renderOutputTrend();
-            if (selectedInverter) requestSelectedInverterToday();
-            generateExcelButton.disabled = !selectedInverter && !selectedWmas;
-        });
-        wmasSelect?.addEventListener('change', () => {
-            selectedWmas = wmasSelect.value || '';
-            renderWmasTrend();
-            if (selectedWmas) requestSelectedWmosToday();
-            generateExcelButton.disabled = !selectedInverter && !selectedWmas;
+        sourceSelect?.addEventListener('change', () => {
+            selectedSource = sourceSelect.value || '';
+            if (WMOS_EXPORT_SOURCES[selectedSource]) {
+                selectedWmas = selectedSource;
+                selectedInverter = '';
+                requestSelectedWmosToday();
+            } else {
+                selectedInverter = selectedSource;
+                selectedWmas = '';
+                requestSelectedInverterToday();
+            }
+            generateExcelButton.disabled = !selectedSource;
+            renderAnalyticsSourceMode();
         });
         exportButton?.addEventListener('click', exportSelectedInverterExcel);
         generateExcelButton?.addEventListener('click', generateSelectedAnalyticsExcel);
 
         initOutputTrendChart();
+        initWmasTrendChart();
         seedConfiguredInverters();
-        renderOutputTrend();
+        renderAnalyticsSourceMode();
         connectWSAnalytics();
         connectWSAnalyticsWmos();
 
