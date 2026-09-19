@@ -400,30 +400,34 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 const s = slot15Min(r.time || r.timestamp);
                 if (!s) return;
                 if (!weatherBuckets[s]) weatherBuckets[s] = { rad: null, ptemp: null, atemp: null, wind: null, hum: null };
-                const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase();
-                const task = String(r.task || fallbackTask || '').toLowerCase();
-                const v = r.values || {};
-                captureLiveWeatherValues(v, dev, task, r.time || r.timestamp || '');
+                const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase().trim();
+                const task = String(r.task || fallbackTask || '').toLowerCase().trim();
+                const v = r.values && typeof r.values === 'object' ? r.values : {};
+                if (!/^(wmos|wmas|weather)$/.test(task)) return;
 
-                const read = (patterns) => {
-                    for (const [key, raw] of Object.entries(v)) {
-                        const kl = String(key).toLowerCase().replace(/[_-]+/g, ' ');
-                        if (!patterns.some(rx => rx.test(kl))) continue;
-                        const n = normalizeWeatherValue(raw);
-                        if (n !== null) return n;
-                    }
-                    return null;
+                const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+                const readExact = keys => {
+                    const wanted = new Set(keys.map(normalizeKey));
+                    const key = Object.keys(v).find(k => wanted.has(normalizeKey(k)));
+                    return key ? normalizeWeatherValue(v[key]) : null;
                 };
-                const rad = read([/^raw data$/, /radiation/, /irradiance/]);
-                const pt = read([/pannel.*temp/, /panel.*temp/, /module.*temp/, /^temp( data)?$/, /^temperature$/]);
-                const at = read([/ambient.*temp/]);
-                const wind = read([/wind.*speed/, /^windspeed$/, /^wind$/]);
-                const hum = read([/humidity/, /relative humidity/]);
-                if (rad !== null) weatherBuckets[s].rad = rad;
-                if (pt !== null) weatherBuckets[s].ptemp = pt;
-                if (at !== null) weatherBuckets[s].atemp = at;
-                if (wind !== null) weatherBuckets[s].wind = wind;
-                if (hum !== null) weatherBuckets[s].hum = hum;
+
+                if (/pyranometer|pyrimeter/.test(dev)) {
+                    const value = readExact(['raw data']);
+                    if (value !== null) weatherBuckets[s].rad = value;
+                } else if (/pannel.*temp|panel.*temp|module.*temp/.test(dev)) {
+                    const value = readExact(['pannel temperature','panel temperature','module temperature']);
+                    if (value !== null) weatherBuckets[s].ptemp = value;
+                } else if (/^ambient(?: temperature)?$|ambient.*temp/.test(dev)) {
+                    const value = readExact(['ambient temperature']);
+                    if (value !== null) weatherBuckets[s].atemp = value;
+                } else if (/^wind$|wind.*speed|anemometer/.test(dev)) {
+                    const value = readExact(['windspeed','wind speed']);
+                    if (value !== null) weatherBuckets[s].wind = value;
+                } else if (/^humidity$|humid/.test(dev)) {
+                    const value = readExact(['humidity','relative humidity']);
+                    if (value !== null) weatherBuckets[s].hum = value;
+                }
             });
             if (currentReportSection === 'wmas') renderWmasReportFromBuckets();
         }
