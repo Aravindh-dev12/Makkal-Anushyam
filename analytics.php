@@ -345,9 +345,10 @@ function cloneValues(values) {
 }
 
 function ensureInverter(name) {
-    const clean = String(name || '').trim();
+    const raw = String(name || '').trim();
+    const clean = canonicalInverterName(raw);
     const key = clean.toLowerCase();
-    if (!clean || !isInverterDevice(clean)) return '';
+    if (!clean || !isInverterDevice(raw, 'inverter')) return '';
     if (!state.inverters[key]) {
         state.inverters[key] = {
             key,
@@ -362,9 +363,17 @@ function ensureInverter(name) {
     return key;
 }
 
-function isInverterDevice(name) {
+function canonicalInverterName(name) {
+    const raw = String(name || '').trim();
+    const match = raw.match(/(?:inverter|inv)[\s_-]*(\d{1,2})/i) || raw.match(/^(\d{1,2})$/);
+    return match ? 'Inverter ' + String(parseInt(match[1], 10)) : raw;
+}
+
+function isInverterDevice(name, task = '') {
     const n = normalizeName(name);
-    return /inverter/i.test(n) || /^inv\s*\d+/i.test(n) || /^inv\s*[-_]?\s*\d+/i.test(n);
+    if (!n || /vcb|transformer|trafo|oil|winding/.test(n)) return false;
+    if (/inverter/.test(n) || /^inv(?:\s|\d|-|_)/.test(n)) return true;
+    return /inverter/i.test(String(task || '')) && /^\d{1,2}$/.test(n);
 }
 
 function extractInverter(values) {
@@ -385,8 +394,8 @@ function selectedInverterHistory() {
     return state.inverterHistory[state.selectedInverter] || [];
 }
 
-function addInverterSample(name, values, sourceTime) {
-    const key = ensureInverter(name);
+function addInverterSample(name, values, sourceTime, task = '') {
+    const key = ensureInverter(name, task);
     if (!key) return;
     const reading = extractInverter(values);
     if (reading.power === null && reading.daily === null) return;
@@ -458,7 +467,7 @@ function walkMessage(node, inheritedDevice = '', inheritedTask = '', inheritedTi
 
     if (node.values && typeof node.values === 'object' && !Array.isArray(node.values)) {
         if (hasWeatherTask(task)) consumeWmosFrame(node.values, device, task, time);
-        else if (isInverterDevice(device) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, node.values, time);
+        else if (isInverterDevice(device, task) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, node.values, time, task);
     }
 
     if (node.data && typeof node.data === 'object') {
@@ -467,6 +476,28 @@ function walkMessage(node, inheritedDevice = '', inheritedTask = '', inheritedTi
     }
     if (node.payload && typeof node.payload === 'object') walkMessage(node.payload, device, task, time);
     if (node.result && typeof node.result === 'object') walkMessage(node.result, device, task, time);
+}
+
+function collectInverterDeviceNames(node, out = [], depth = 0) {
+    if (depth > 6 || node === null || node === undefined) return out;
+    if (Array.isArray(node)) {
+        node.forEach(item => collectInverterDeviceNames(item, out, depth + 1));
+        return out;
+    }
+    if (typeof node !== 'object') {
+        const text = String(node).trim();
+        if (text && isInverterDevice(text, 'inverter')) out.push(text);
+        return out;
+    }
+    const candidates = [node.name, node.device, node.deviceName, node.inverter, node.inverter_name, node.label];
+    candidates.forEach(value => {
+        const text = String(value || '').trim();
+        if (text && isInverterDevice(text, 'inverter')) out.push(text);
+    });
+    ['devices', 'data', 'inverters', 'items', 'results'].forEach(key => {
+        if (node[key] !== undefined) collectInverterDeviceNames(node[key], out, depth + 1);
+    });
+    return out;
 }
 
 function consumeLiveMessage(message) {
@@ -480,20 +511,15 @@ function consumeLiveMessage(message) {
 
     if (message.values && typeof message.values === 'object' && !Array.isArray(message.values)) {
         if (hasWeatherTask(task)) consumeWmosFrame(message.values, device, task, time);
-        else if (isInverterDevice(device) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, message.values, time);
+        else if (isInverterDevice(device, task) || /^inverter$/i.test(String(task || ''))) addInverterSample(device, message.values, time, task);
     }
     walkMessage(message.data, device, task, time);
     walkMessage(message.payload, device, task, time);
     walkMessage(message.result, device, task, time);
 
-    if (message.type === 'device_list' || message.event === 'device_list') {
-        const devices = message.devices || message.data || [];
-        if (Array.isArray(devices)) {
-            devices.forEach(item => {
-                const name = typeof item === 'string' ? item : (item?.name || item?.device || item?.deviceName || '');
-                if (isInverterDevice(name)) ensureInverter(name);
-            });
-        }
+    if (message.type === 'device_list' || message.event === 'device_list' || message.type === 'devices') {
+        const names = collectInverterDeviceNames(message.devices || message.data || message.inverters || message);
+        [...new Set(names.map(canonicalInverterName))].forEach(name => ensureInverter(name, 'inverter'));
         populateInverterOptions();
     }
 }
