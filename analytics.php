@@ -432,7 +432,10 @@ function mergeStoredWmosRows(rows) {
         target.timestamp = Math.max(target.timestamp, timestamp);
         ['radiation', 'panelTemp', 'ambientTemp', 'windSpeed', 'humidity'].forEach(metric => {
             const value = parseNumber(row[metric]);
-            if (value !== null) {
+            const rowMetric = deviceToWmosMetric(row.device_name || '');
+            const deviceMatches = rowMetric === metric;
+            const legacyNonZero = !row.device_name && value !== null && value !== 0;
+            if (value !== null && (deviceMatches || legacyNonZero)) {
                 target[metric] = value;
                 target[metric + '_device'] = row.device_name || WMOS_DEVICES[metric].device;
                 target[metric + '_sample_time'] = timestamp;
@@ -613,6 +616,21 @@ function renderWmos() {
     document.getElementById('wmWind').textContent = formatWmosValue('windSpeed', state.wmos.windSpeed);
     document.getElementById('wmHumidity').textContent = formatWmosValue('humidity', state.wmos.humidity);
     document.getElementById('wmosLastTime').textContent = state.wmos.lastSampleAt ? new Date(state.wmos.lastSampleAt).toLocaleTimeString('en-IN', { hour12: false }) : '--';
+
+    const body = document.getElementById('wmosLiveTableBody');
+    if (!body) return;
+    const rows = state.wmosHistory.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
+    body.innerHTML = rows.length ? rows.map(row => {
+        const time = new Date(row.timestamp).toLocaleTimeString('en-IN', { hour12: false });
+        return '<tr class="border-b border-slate-100">' +
+            '<td class="px-3 py-2 font-mono text-slate-600">' + time + '</td>' +
+            '<td class="px-3 py-2 text-right font-bold text-slate-800">' + formatWmosValue('radiation', row.radiation) + '</td>' +
+            '<td class="px-3 py-2 text-right font-bold text-slate-800">' + formatWmosValue('panelTemp', row.panelTemp) + '</td>' +
+            '<td class="px-3 py-2 text-right font-bold text-slate-800">' + formatWmosValue('ambientTemp', row.ambientTemp) + '</td>' +
+            '<td class="px-3 py-2 text-right font-bold text-slate-800">' + formatWmosValue('windSpeed', row.windSpeed) + '</td>' +
+            '<td class="px-3 py-2 text-right font-bold text-slate-800">' + formatWmosValue('humidity', row.humidity) + '</td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Waiting for WMOS data...</td></tr>';
 }
 
 function updateCards() {
