@@ -350,7 +350,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const taskStr = String(task || '').toLowerCase().trim();
             const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
             if (unitId && String(unitId) !== String(plantSelect.value || 'vinoba-velliyanai')) return false;
-            if (!/^(wmos|wmas|weather)$/.test(taskStr)) return false;
+            if (!/^wmos$/.test(taskStr)) return false;
 
             let metric = '';
             let raw = null;
@@ -403,7 +403,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 const dev = String(r.device || r.deviceName || fallbackDevice || '').toLowerCase().trim();
                 const task = String(r.task || fallbackTask || '').toLowerCase().trim();
                 const v = r.values && typeof r.values === 'object' ? r.values : {};
-                if (!/^(wmos|wmas|weather)$/.test(task)) return;
+                if (!/^wmos$/.test(task)) return;
 
                 const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
                 const readExact = keys => {
@@ -456,7 +456,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             lastReportData = {
                 type: 'daily',
                 data: rows,
-                meta: { report_section: 'wmas', source: 'Real WebSocket WMAS/WMOS telemetry' }
+                meta: { report_section: 'wmas', source: 'Real WebSocket WMOS telemetry' }
             };
             renderWmasReportData('daily', rows);
         }
@@ -675,7 +675,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             if (!result.success) throw new Error(result.error || result.message || 'Unknown server error');
 
             if (currentReportSection === 'wmas') {
-                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmas', source: 'Stored real WMAS/WMOS telemetry' } };
+                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmas', source: 'Stored real WMOS telemetry' } };
                 renderWmasReportData(type, result.data || []);
             } else {
                 lastReportData = result;
@@ -734,7 +734,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const tbody = document.getElementById('reportTableBody');
             const validRows = (rows || []).filter(row => row && (row.time_label || row.bTime || row.report_day));
             if (!validRows.length) {
-                tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">Waiting for real WMAS/WMOS telemetry...</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-gray-500">Waiting for real WMOS telemetry...</td></tr>';
                 return;
             }
             let sumRad=0, radN=0, maxPanel=null, maxAmbient=null;
@@ -898,7 +898,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 plant_name: plantName,
                 report_type: type,
                 date,
-                source: lastReportData.meta?.source || (currentReportSection === 'wmas' ? 'WMAS/WMOS telemetry' : 'Inverter/electrical telemetry'),
+                source: lastReportData.meta?.source || (currentReportSection === 'wmas' ? 'WMOS telemetry' : 'Inverter/electrical telemetry'),
                 columns,
                 rows
             };
