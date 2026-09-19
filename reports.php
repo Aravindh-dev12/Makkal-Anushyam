@@ -349,9 +349,10 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const dev = String(device || '').toLowerCase();
             const taskStr = String(task || '').toLowerCase();
             const normalizeKey = k => String(k).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
-            const weatherSignal = /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/.test(dev + ' ' + taskStr) ||
-                Object.keys(values).map(normalizeKey).some(k => /pyran|radiat|irradiance|pannel.*temp|panel.*temp|module.*temp|ambient.*temp|wind.*speed|humidity/.test(k));
-            if (!weatherSignal) return false;
+            if (unitId && String(unitId) !== String(plantSelect.value || 'vinoba-velliyanai')) return false;
+            const weatherDevice = /pyranometer|pyrimeter|pannel|panel|module|ambient|wind|humid/i.test(dev);
+            const weatherTask = /^(wmos|wmas|weather)$/i.test(taskStr.trim());
+            if (!weatherTask && !weatherDevice) return false;
 
             const read = (direct, patterns = []) => {
                 const wanted = direct.map(normalizeKey);
