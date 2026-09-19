@@ -107,7 +107,7 @@
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
                             <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMOS)
                         </h3>
-                        <span id="homeWmasStatus" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Waiting for live telemetry</span>
+                        <span id="homeWmosStatus" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Waiting for live telemetry</span>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs hover:shadow-md transition">
@@ -212,7 +212,7 @@
         document.getElementById('profileName').textContent = cfg.name;
         document.getElementById('profileCapacity').innerHTML = cfg.capacity + ' <span class="text-sm font-bold">MW</span>';
         document.getElementById('profileLocation').textContent = cfg.location;
-        setInterval(updateHomeWmasStatus, 1000);
+        setInterval(updatehomeWmosStatus, 1000);
 
         setInterval(() => { document.getElementById('clockDisplay').innerText = new Date().toLocaleTimeString('en-IN', {hour12: false}); }, 1000);
         fetch('sidebar.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
@@ -567,12 +567,12 @@
             return null;
         }
 
-        let homeWmasLastReceivedAt = 0;
+        let homeWmosLastReceivedAt = 0;
 
-        function updateHomeWmasStatus() {
-            const el = document.getElementById('homeWmasStatus');
+        function updatehomeWmosStatus() {
+            const el = document.getElementById('homeWmosStatus');
             if (!el) return;
-            const age = homeWmasLastReceivedAt ? Date.now() - homeWmasLastReceivedAt : Infinity;
+            const age = homeWmosLastReceivedAt ? Date.now() - homeWmosLastReceivedAt : Infinity;
             if (age <= 5000) {
                 el.className = 'text-[10px] font-bold text-emerald-600 uppercase tracking-wider';
                 el.textContent = 'Live Telemetry';
@@ -646,7 +646,7 @@
                 const el = document.getElementById('wmos_hum');
                 if (el) { el.textContent = numeric.toFixed(1); el.dataset.live = 'true'; updated = true; }
             }
-            if (updated) homeWmasLastReceivedAt = Date.now();
+            if (updated) homeWmosLastReceivedAt = Date.now();
             return updated;
         }
         function homeHandleWeatherMessage(message) {
