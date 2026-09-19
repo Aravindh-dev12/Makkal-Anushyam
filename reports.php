@@ -369,7 +369,13 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             let rad = read(['raw data','radiation','solar radiation','irradiance'], [/^raw data$/,/radiation/,/irradiance/,/pyran/]);
             let panel = read(['pannel temperature','panel temperature','module temperature'], [/pannel.*temp/,/panel.*temp/,/module.*temp/,/^temperature$/,/^temp$/,/^temp data$/]);
             let ambient = read(['ambient temperature'], [/ambient.*temp/]);
-            let wind = read(['windspeed','wind speed'], [/wind.*speed/,/^windspeed$/,/^wind$/]);
+            // Exact live SCADA Wind frame: device="Wind", values.windspeed.
+            let wind = null;
+            if (/^wind$|wind speed|anemometer/.test(dev)) {
+                const directWindKey = Object.keys(values).find(key => normalizeKey(key) === 'windspeed' || normalizeKey(key) === 'wind speed');
+                if (directWindKey) wind = normalizeWeatherValue(values[directWindKey]);
+            }
+            if (wind === null) wind = read(['windspeed','wind speed','wind_speed','wind velocity','windvelocity','wind','speed','velocity'], [/wind.*speed/,/^windspeed$/,/^wind$/, /wind.*velocity/, /velocity.*wind/, /anemometer/,/(^|\\s)(speed|velocity)(?:\\s|$)/]);
             let hum = read(['humidity','relative humidity'], [/humidity/]);
 
             if (panel === null && /pannel|panel|module/.test(dev)) panel = read([], [/temp/]);
