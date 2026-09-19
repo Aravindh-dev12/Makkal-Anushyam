@@ -618,9 +618,14 @@
                 metric = 'humidity';
                 const key = Object.keys(values).find(k => normalize(k) === 'humidity' || normalize(k) === 'relative humidity');
                 raw = key ? values[key] : null;
+            } else if (String(task || '').toLowerCase() === 'wmos') {
+                const normalizedKeys = Object.keys(values).map(normalize);
+                if (normalizedKeys.includes('raw data') || normalizedKeys.includes('radiation')) { metric = 'radiation'; raw = values[Object.keys(values).find(k => normalize(k) === 'raw data') || Object.keys(values).find(k => normalize(k) === 'radiation')]; }
+                else if (normalizedKeys.includes('pannel temperature') || normalizedKeys.includes('panel temperature') || normalizedKeys.includes('module temperature')) { metric = 'panel'; raw = values[Object.keys(values).find(k => ['pannel temperature','panel temperature','module temperature'].includes(normalize(k)))]; }
+                else if (normalizedKeys.includes('ambient temperature')) { metric = 'ambient'; raw = values[Object.keys(values).find(k => normalize(k) === 'ambient temperature')]; }
+                else if (normalizedKeys.includes('windspeed') || normalizedKeys.includes('wind speed')) { metric = 'wind'; raw = values[Object.keys(values).find(k => ['windspeed','wind speed'].includes(normalize(k)))]; }
+                else if (normalizedKeys.includes('humidity') || normalizedKeys.includes('relative humidity')) { metric = 'humidity'; raw = values[Object.keys(values).find(k => ['humidity','relative humidity'].includes(normalize(k)))]; }
             } else {
-                // Only accept explicit WMOS task frames when the device itself
-                // clearly identifies the metric. Unknown devices are ignored.
                 return false;
             }
 
