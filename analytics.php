@@ -421,7 +421,15 @@ function mergeWmosSample(metric, value, sourceTime, device) {
 
 function consumeWmosFrame(values, device, task, sourceTime) {
     if (!hasWeatherTask(task)) return false;
-    const metric = deviceToWmosMetric(device);
+    let metric = deviceToWmosMetric(device);
+    if (!metric) {
+        const keys = Object.keys(values || {}).map(normalizeName);
+        if (keys.includes('raw data') || keys.includes('radiation')) metric = 'radiation';
+        else if (keys.includes('pannel temperature') || keys.includes('panel temperature') || keys.includes('module temperature')) metric = 'panelTemp';
+        else if (keys.includes('ambient temperature')) metric = 'ambientTemp';
+        else if (keys.includes('windspeed') || keys.includes('wind speed')) metric = 'windSpeed';
+        else if (keys.includes('humidity') || keys.includes('relative humidity')) metric = 'humidity';
+    }
     if (!metric) return false;
     const value = exactWmosValue(metric, values);
     if (metric === 'panelTemp' && value === null) {
