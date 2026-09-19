@@ -84,7 +84,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 <button id="menuBtn" class="md:hidden text-green-700 text-2xl focus:outline-none">&#9776;</button>
                 <div>
                     <h2 class="text-lg sm:text-xl font-bold text-gray-800">System Reports</h2>
-                    <p class="text-xs text-gray-500 hidden sm:block">Separate Inverter / Electrical and WMAS Weather Telemetry Reports</p>
+                    <p class="text-xs text-gray-500 hidden sm:block">Separate Inverter / Electrical and WMOS Weather Telemetry Reports</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -109,7 +109,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                     <select id="plantSelect" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer"></select>
                     <select id="reportSection" onchange="toggleReportSection()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer">
                         <option value="inverter">Inverter / Electrical Report</option>
-                        <option value="wmas">WMAS Weather Report</option>
+                        <option value="wmos">WMOS Weather Report</option>
                     </select>
                     <select id="reportType" onchange="toggleInputs()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none bg-gray-50 font-medium cursor-pointer">
                         <option value="daily">Daily Report</option>
@@ -287,9 +287,9 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
 
         function toggleReportSection() {
             currentReportSection = getReportSection();
-            const isWmas = currentReportSection === 'wmas';
+            const isWmas = currentReportSection === 'wmos';
             document.getElementById('reportMainTitle').innerText = isWmas
-                ? 'WMAS Weather Report (Live Telemetry)'
+                ? 'WMOS Weather Report (Live Telemetry)'
                 : 'Inverter / Electrical Report';
             document.getElementById('reportMainTitle').className = isWmas
                 ? 'text-base font-bold text-amber-700 mt-0.5'
@@ -389,7 +389,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             liveWeather.lastAt = Date.now();
             liveWeather.lastSampleAt = sourceTime ? new Date(sourceTime).getTime() || Date.now() : Date.now();
             if (unitId) liveWmasUnitId = unitId;
-            if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
+            if (currentReportSection === 'wmos' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
                 renderWmasLiveRow();
             }
             return true;
@@ -429,7 +429,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                     if (value !== null) weatherBuckets[s].hum = value;
                 }
             });
-            if (currentReportSection === 'wmas') renderWmasReportFromBuckets();
+            if (currentReportSection === 'wmos') renderWmasReportFromBuckets();
         }
 
         function renderWmasLiveRow() {
@@ -456,7 +456,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             lastReportData = {
                 type: 'daily',
                 data: rows,
-                meta: { report_section: 'wmas', source: 'Real WebSocket WMOS telemetry' }
+                meta: { report_section: 'wmos', source: 'Real WebSocket WMOS telemetry' }
             };
             renderWmasReportData('daily', rows);
         }
@@ -473,7 +473,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                     ws.send(JSON.stringify({ type: 'get_devices', unit_id: plant }));
                     if (currentReportSection === 'inverter') {
                         if (pendingReportRequest) sendReportRequest();
-                    } else if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily') {
+                    } else if (currentReportSection === 'wmos' && document.getElementById('reportType').value === 'daily') {
                         requestWmasDailyHistory();
                     }
                 };
@@ -519,7 +519,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                         if (currentReportSection === 'inverter') {
                             const reportTypes = ['report_data','generate_report','generate_report_result','report','report_result','report_generated'];
                             if ((reportTypes.includes(d.type) || d.columns || d.rows) && (!messageUnit || messageUnit === (plantSelect.value || 'vinoba-velliyanai'))) handleWSReportResponse(d);
-                        } else if (currentReportSection === 'wmas' && /wmos|wmas|weather|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(task) + ' ' + String(device))) {
+                        } else if (currentReportSection === 'wmos' && /wmos|pyran|pyrimeter|panel|pannel|ambient|wind|humid|radiat|irradiance/i.test(String(task) + ' ' + String(device))) {
                             renderWmasLiveRow();
                         }
                     } catch(err) {
@@ -550,7 +550,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const type = document.getElementById('reportType').value;
             const selectedDate = type === 'daily' ? dateInput.value : monthInput.value;
 
-            if (currentReportSection === 'wmas') {
+            if (currentReportSection === 'wmos') {
                 if (type === 'daily') {
                     ws.send(JSON.stringify({ type: 'subscribe', unit_id: plant }));
                     return requestWmasDailyHistory();
@@ -674,8 +674,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             try { result = JSON.parse(text); } catch (e) { throw new Error('Server returned invalid JSON'); }
             if (!result.success) throw new Error(result.error || result.message || 'Unknown server error');
 
-            if (currentReportSection === 'wmas') {
-                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmas', source: 'Stored real WMOS telemetry' } };
+            if (currentReportSection === 'wmos') {
+                lastReportData = { type, data: result.data || [], meta: { report_section: 'wmos', source: 'Stored real WMOS telemetry' } };
                 renderWmasReportData(type, result.data || []);
             } else {
                 lastReportData = result;
@@ -777,7 +777,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             const tbody = document.getElementById('reportTableBody');
             tbody.innerHTML = '<tr><td colspan="30" class="py-12 bg-white"><div class="flex flex-col items-center justify-center"><div class="w-10 h-10 border-4 border-gray-200 border-t-emerald-600 rounded-full animate-spin"></div><p class="mt-3 text-sm font-bold text-gray-600">Connecting to live telemetry...</p></div></td></tr>';
 
-            if (currentReportSection === 'wmas') {
+            if (currentReportSection === 'wmos') {
                 pendingReportRequest = false;
                 if (wsReportTimeout) { clearTimeout(wsReportTimeout); wsReportTimeout = null; }
                 lastReportData = null;
@@ -871,13 +871,13 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
 
             let columns;
             let filename;
-            if (currentReportSection === 'wmas') {
+            if (currentReportSection === 'wmos') {
                 columns = [
                     type === 'daily' ? 'Time' : 'Date',
                     'Solar Radiation (W/m²)', 'Panel Temp (°C)', 'Ambient Temp (°C)',
                     'Wind Speed (m/s)', 'Humidity (%)'
                 ];
-                filename = `vinoba_wmas_report_${plant}_${date}.json`;
+                filename = `vinoba_wmos_report_${plant}_${date}.json`;
             } else {
                 let invNames = lastReportData.meta ? lastReportData.meta.inv_names : null;
                 if (!invNames || !invNames.length) {
@@ -898,7 +898,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
                 plant_name: plantName,
                 report_type: type,
                 date,
-                source: lastReportData.meta?.source || (currentReportSection === 'wmas' ? 'WMOS telemetry' : 'Inverter/electrical telemetry'),
+                source: lastReportData.meta?.source || (currentReportSection === 'wmos' ? 'WMOS telemetry' : 'Inverter/electrical telemetry'),
                 columns,
                 rows
             };
@@ -914,7 +914,7 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         toggleReportSection();
 
         setInterval(() => {
-            if (currentReportSection === 'wmas' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
+            if (currentReportSection === 'wmos' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
                 renderWmasLiveRow();
             }
         }, 1000);
