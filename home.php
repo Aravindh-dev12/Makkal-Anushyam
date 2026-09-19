@@ -101,11 +101,11 @@
                         <div class="text-sm text-slate-400 italic text-center py-8 col-span-full">Waiting for telemetry data...</div>
                     </div>
                 </div>
-                <!-- Weather Station (WMAS / WMOS) - live real telemetry values -->
+                <!-- Weather Station (WMOS) - live real telemetry values -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                         <h3 class="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMAS / WMOS)
+                            <i class="fa-solid fa-cloud-sun text-emerald-500"></i> Weather Station (WMOS)
                         </h3>
                         <span id="homeWmasStatus" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Waiting for live telemetry</span>
                     </div>
@@ -710,7 +710,7 @@ const today = localDateKey();
                     }
                     if (d.type === 'device_list') return;
 
-                    // WMAS/WMOS is live telemetry. Handle every gateway payload shape before plant filtering.
+                    // WMOS is live telemetry. Handle every gateway payload shape before plant filtering.
                     if (homeHandleWeatherMessage(d)) return;
 
                     if (d.unit_id !== currentPlant) return;
