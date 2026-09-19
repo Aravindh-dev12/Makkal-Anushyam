@@ -364,7 +364,7 @@ function ensureInverter(name) {
 
 function isInverterDevice(name) {
     const n = normalizeName(name);
-    return /\\binverter\\b/.test(n) || /\\binv\\s*[-_]?\\s*\\d+\\b/.test(n);
+    return /inverter/i.test(n) || /^inv\s*\d+/i.test(n) || /^inv\s*[-_]?\s*\d+/i.test(n);
 }
 
 function extractInverter(values) {
