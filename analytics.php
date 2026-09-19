@@ -293,11 +293,6 @@ function todayKey() {
     return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 }
 
-function minuteKey(ts) {
-    const d = new Date(ts);
-    return Math.floor(d.getTime() / 60000);
-}
-
 function deviceToWmosMetric(device) {
     const n = normalizeName(device);
     if (/pyranometer|pyrimeter/.test(n)) return 'radiation';
@@ -413,13 +408,14 @@ function mergeWmosSample(metric, value, sourceTime, device) {
     state.wmos.lastReceivedAt = Date.now();
     state.wmos.lastSampleAt = timestamp;
     state.wmos.sampleTimes[metric] = timestamp;
-    const minute = minuteKey(timestamp);
-    let row = state.wmosHistory.find(item => item.minute === minute);
+    // Keep the exact telemetry timestamp used by the live analytics data.
+    // Do not merge samples by minute: if sensors report at different seconds,
+    // Excel must preserve those separate seconds exactly.
+    let row = state.wmosHistory.find(item => item.timestamp === timestamp);
     if (!row) {
-        row = { minute, timestamp: timestamp };
+        row = { timestamp: timestamp };
         state.wmosHistory.push(row);
     }
-    row.timestamp = Math.max(row.timestamp, timestamp);
     row[metric] = value;
     row[metric + '_device'] = device || WMOS_DEVICES[metric].device;
     row[metric + '_sample_time'] = timestamp;
@@ -772,7 +768,7 @@ function exportWmosExcel() {
         'Ambient Device': row.ambientTemp_device ?? '',
         'Wind Device': row.windSpeed_device ?? '',
         'Humidity Device': row.humidity_device ?? '',
-        'Reading Type': 'Actual live WebSocket samples merged by minute'
+        'Reading Type': 'Actual live WebSocket sample at exact telemetry time'
     }));
 
     const hasLiveValue = Object.values(state.wmos).some(v => typeof v === 'number' && Number.isFinite(v));
@@ -807,7 +803,7 @@ function exportWmosExcel() {
     return true;
 }
 
-async async function downloadSelectedExcel() {
+async function downloadSelectedExcel() {
     if (!selectedSource) return;
     const old = generateButton.innerHTML;
     generateButton.disabled = true;
