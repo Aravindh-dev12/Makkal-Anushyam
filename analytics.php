@@ -72,7 +72,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 <button id="menuBtn" class="md:hidden text-emerald-600 text-2xl">&#9776;</button>
                 <div class="min-w-0">
                     <h2 class="text-xl font-black text-slate-900 tracking-tight truncate" id="headerPlantName">Plant Analytics</h2>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">Live inverter + WMOS telemetry</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">Live inverter + WMAS telemetry</p>
                 </div>
             </div>
             <div class="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -96,7 +96,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                             <select id="analyticsSourceSelect" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Select Inverter / WMOS</option>
                                 <optgroup id="inverterGroup" label="Inverters"></optgroup>
-                                <option value="wmos:all">WMOS - All Weather Data</option>
+                                <option value="wmos:all">WMAS - All Weather Data</option>
                             </select>
                         </label>
                         <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -130,7 +130,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             <section id="wmosSection" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5 hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
-                        <h2 class="text-lg font-black text-slate-900">WMOS - All Live Weather Data</h2>
+                        <h2 class="text-lg font-black text-slate-900">WMAS - All Live Weather Data</h2>
                         <p class="text-xs text-slate-500">One common source. Radiation, panel temperature, ambient temperature, wind speed and humidity come from their exact WMOS devices and fields.</p>
                     </div>
                     <div class="text-right">
@@ -169,7 +169,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
 
                 <div class="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-xs font-bold text-slate-600">Live WMOS values only.</p>
-                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS samples.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMAS samples.</p>
                 </div>
             </section>
         </div>
@@ -249,11 +249,11 @@ const state = {
 };
 
 const WMOS_DEVICES = {
-    radiation: { label: 'Radiation', unit: 'W/m²', decimals: 0, device: 'Pyranometer', key: 'raw data' },
-    panelTemp: { label: 'Panel Temp', unit: '°C', decimals: 1, device: 'pannel temperature', key: 'pannel temperature' },
-    ambientTemp: { label: 'Amb Temp', unit: '°C', decimals: 1, device: 'Ambient Temperature', key: 'Ambient temperature' },
-    windSpeed: { label: 'Wind Speed', unit: 'm/s', decimals: 1, device: 'Wind', key: 'windspeed' },
-    humidity: { label: 'Humidity', unit: '%RH', decimals: 1, device: 'Humidity', key: 'humidity' }
+    radiation: { label: 'Radiation', unit: 'W/m²', decimals: 0, device: 'Pyranometer', keys: ['raw data', 'raw_data', 'radiation', 'solar radiation'] },
+    panelTemp: { label: 'Panel Temp', unit: '°C', decimals: 1, device: 'pannel temperature', keys: ['pannel temperature', 'panel temperature', 'panel_temp', 'paneltemp', 'module temperature'] },
+    ambientTemp: { label: 'Amb Temp', unit: '°C', decimals: 1, device: 'Ambient Temperature', keys: ['Ambient temperature', 'ambient temperature', 'ambient_temp', 'ambienttemp'] },
+    windSpeed: { label: 'Wind Speed', unit: 'm/s', decimals: 1, device: 'Wind', keys: ['windspeed', 'wind speed', 'wind_speed', 'windspeed m/s'] },
+    humidity: { label: 'Humidity', unit: '%RH', decimals: 1, device: 'Humidity', keys: ['humidity', 'relative humidity', 'relative_humidity', 'rh'] }
 };
 
 function normalizeName(v) {
@@ -295,25 +295,27 @@ function todayKey() {
 
 function deviceToWmosMetric(device) {
     const n = normalizeName(device);
-    if (/pyranometer|pyrimeter/.test(n)) return 'radiation';
+    if (/pyranometer|pyrimeter|radiation|solar radiation/.test(n)) return 'radiation';
     if (/pannel.*temp|panel.*temp|module.*temp/.test(n)) return 'panelTemp';
-    if (/ambient.*temp/.test(n) || n === 'ambient') return 'ambientTemp';
-    if (/^wind$|wind.*speed|anemometer/.test(n)) return 'windSpeed';
-    if (/^humidity$|relative humidity/.test(n)) return 'humidity';
+    if (/ambient.*temp|ambient temperature/.test(n) || n === 'ambient') return 'ambientTemp';
+    if (/^wind$|wind.*speed|windspeed|anemometer/.test(n)) return 'windSpeed';
+    if (/^humidity$|relative humidity|^rh$/.test(n)) return 'humidity';
     return '';
 }
 
 function hasWeatherTask(task) {
-    return /^wmos$/i.test(String(task || '').trim());
+    return /^(wmos|wmas)$/i.test(String(task || '').trim());
 }
 
 function exactWmosValue(metric, values) {
     if (!values || typeof values !== 'object' || Array.isArray(values)) return null;
-    const wanted = WMOS_DEVICES[metric]?.key || '';
-    const wantedNormalized = normalizeName(wanted);
+    const aliases = WMOS_DEVICES[metric]?.keys || [];
+    const wanted = aliases.map(normalizeName);
     for (const [key, raw] of Object.entries(values)) {
-        if (normalizeName(key) !== wantedNormalized) continue;
-        return parseNumber(raw);
+        const normalizedKey = normalizeName(key);
+        if (!wanted.includes(normalizedKey)) continue;
+        const value = parseNumber(raw);
+        if (value !== null) return value;
     }
     return null;
 }
@@ -428,11 +430,11 @@ function consumeWmosFrame(values, device, task, sourceTime) {
     let metric = deviceToWmosMetric(device);
     if (!metric) {
         const keys = Object.keys(values || {}).map(normalizeName);
-        if (keys.includes('raw data') || keys.includes('radiation')) metric = 'radiation';
-        else if (keys.includes('pannel temperature') || keys.includes('panel temperature') || keys.includes('module temperature')) metric = 'panelTemp';
-        else if (keys.includes('ambient temperature')) metric = 'ambientTemp';
-        else if (keys.includes('windspeed') || keys.includes('wind speed')) metric = 'windSpeed';
-        else if (keys.includes('humidity') || keys.includes('relative humidity')) metric = 'humidity';
+        if (keys.some(k => ['raw data','raw_data','radiation','solar radiation'].includes(k))) metric = 'radiation';
+        else if (keys.some(k => ['pannel temperature','panel temperature','panel_temp','paneltemp','module temperature'].includes(k))) metric = 'panelTemp';
+        else if (keys.some(k => ['ambient temperature','ambient_temp','ambienttemp'].includes(k))) metric = 'ambientTemp';
+        else if (keys.some(k => ['windspeed','wind speed','wind_speed','windspeed m/s'].includes(k))) metric = 'windSpeed';
+        else if (keys.some(k => ['humidity','relative humidity','relative_humidity','rh'].includes(k))) metric = 'humidity';
     }
     if (!metric) return false;
     const value = exactWmosValue(metric, values);
@@ -594,8 +596,8 @@ function renderMode() {
     inverterSection.classList.toggle('hidden', isWmos);
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
-        trendHeading.textContent = 'WMOS - Live Data';
-        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMOS graphs; use Download Live Excel for the received live samples.';
+        trendHeading.textContent = 'WMAS - Live Data';
+        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMAS graphs; use Download Live Excel for the received live samples.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
@@ -776,8 +778,8 @@ function exportWmosExcel() {
 
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Live WebSocket WMOS data received by Analytics' },
+        { Field: 'Selected Source', Value: 'WMAS - All Weather Data' },
+        { Field: 'Export Type', Value: 'Live WebSocket WMAS data received by Analytics' },
         { Field: 'Current Snapshot', Value: 'Five WMOS measurements shown as five separate rows' },
         { Field: 'Historical Weather Rows', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
