@@ -57,14 +57,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, no-cache, must-revalidate');
     
-    $device = isset($_GET['device']) ? trim($conn->real_escape_string($_GET['device'])) : '';
-    $date = isset($_GET['date']) ? $conn->real_escape_string($_GET['date']) : date('Y-m-d');
-    
-    // Verify database connection
-    if (!isset($conn) || !($conn instanceof mysqli) || $conn->connect_errno) {
-        echo json_encode(['success' => false, 'error' => 'Database connection unavailable']);
+    // Verify database connection first
+    if (!isset($conn) || !($conn instanceof mysqli)) {
+        echo json_encode(['success' => false, 'error' => 'Database connection object not available']);
         exit(0);
     }
+    
+    if ($conn->connect_errno) {
+        echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
+        exit(0);
+    }
+    
+    $device = isset($_GET['device']) ? trim($conn->real_escape_string($_GET['device'])) : '';
+    $date = isset($_GET['date']) ? $conn->real_escape_string($_GET['date']) : date('Y-m-d');
     
     if (empty($device)) {
         echo json_encode(['success' => false, 'error' => 'Device parameter required']);
@@ -72,10 +77,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
     }
     
     // Plant access control
-    $userRole = $user['role'] ?? '';
-    $userPlant = $user['plant_id'] ?? '';
+    $userRole = isset($user) && isset($user['role']) ? $user['role'] : '';
+    $userPlant = isset($user) && isset($user['plant_id']) ? $user['plant_id'] : '';
     $plantFilter = $currentPlant;
-    if ($userRole !== 'admin') {
+    if ($userRole !== 'admin' && !empty($userPlant)) {
         $plantFilter = $userPlant;
     }
     $plantClause = ($plantFilter !== 'all' && $plantFilter !== '') ? " AND plant_id = '$plantFilter'" : "";
@@ -155,11 +160,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
                         ac_active_power,
                         daily_generation,
                         internal_temp,
-                        dc_voltage,
-                        dc_current,
-                        ac_voltage,
-                        ac_current,
-                        frequency
+                        ac_voltage_ab as dc_voltage,
+                        phase_current_a as dc_current,
+                        ac_voltage_ab as ac_voltage,
+                        phase_current_a as ac_current,
+                        ac_frequency as frequency
                     FROM inverter_readings 
                     WHERE DATE(recorded_at) = '$date' 
                       AND device_name = '$device'
@@ -203,9 +208,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
         echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         
     } catch (Exception $e) {
+        error_log("Analytics Export Error: " . $e->getMessage());
         $response = [
             'success' => false,
             'error' => 'Database query failed: ' . $e->getMessage()
+        ];
+        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $t) {
+        error_log("Analytics Export Fatal Error: " . $t->getMessage());
+        $response = [
+            'success' => false,
+            'error' => 'System error: ' . $t->getMessage()
         ];
         echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
@@ -222,7 +235,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
     <link rel="stylesheet" href="assets/app.css?v=20260802-1">
     <title id="pageTitle">Plant Analytics</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -273,22 +285,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
             </section>
 
             <section id="inverterSection" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
-                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-black text-slate-900" id="inverterChartTitle">Inverter Output</h2>
-                        <p class="text-xs text-slate-500">Actual WebSocket samples only.</p>
+                        <h2 class="text-lg font-black text-slate-900" id="inverterChartTitle">Inverter Data Export</h2>
+                        <p class="text-xs text-slate-500">Select an inverter and download Excel to get all historical data.</p>
                     </div>
                     <div class="text-right">
                         <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Latest Output</p>
                         <p class="text-xl font-black text-blue-700"><span id="latestInverterValue">--</span> <span class="text-xs">kW</span></p>
                         <p class="text-[10px] text-slate-400">Sample <span id="latestInverterTime">--</span></p>
                     </div>
-                </div>
-                <div id="inverterEmpty" class="py-12 text-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
-                    Select an inverter to load live output data.
-                </div>
-                <div id="inverterChartWrap" class="h-[420px] hidden">
-                    <canvas id="inverterChart"></canvas>
                 </div>
             </section>
 
@@ -380,16 +386,12 @@ const inverterGroup = document.getElementById('inverterGroup');
 const generateButton = document.getElementById('generateAnalyticsExcel');
 const inverterSection = document.getElementById('inverterSection');
 const wmosSection = document.getElementById('wmosSection');
-const inverterEmpty = document.getElementById('inverterEmpty');
-const inverterChartWrap = document.getElementById('inverterChartWrap');
 const trendHeading = document.getElementById('trendHeading');
 const trendDescription = document.getElementById('trendDescription');
 
 let selectedSource = '';
 let socket = null;
 let reconnectTimer = null;
-let inverterChart = null;
-const wmosCharts = {};
 const state = {
     inverters: {},
     selectedInverter: '',
@@ -753,42 +755,11 @@ function escapeHtml(v) {
     return String(v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-function initChart(canvasId, label, unit) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
-    return new Chart(canvas.getContext('2d'), {
-        type: 'line',
-        data: { labels: [], datasets: [{ label, data: [], borderWidth: 2.5, pointRadius: 1.8, pointHoverRadius: 4, tension: 0.25, spanGaps: true, fill: false }] },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-                x: { ticks: { maxTicksLimit: 12, maxRotation: 0, font: { size: 9 } }, title: { display: true, text: 'Time', font: { size: 9, weight: 'bold' } } },
-                y: { beginAtZero: false, ticks: { font: { size: 9 }, callback: v => v + (unit ? ' ' + unit : '') } }
-            },
-            plugins: { legend: { display: false } }
-        }
-    });
-}
-
-function initCharts() {
-    inverterChart = initChart('inverterChart', 'Output', 'kW');
-}
-
 function renderInverter() {
     const selected = state.inverters[state.selectedInverter];
-    const rows = selectedInverterHistory().filter(row => row.powerKw !== null && row.powerKw !== undefined);
-    inverterEmpty.classList.toggle('hidden', !!selected && rows.length > 0);
-    inverterChartWrap.classList.toggle('hidden', !selected || rows.length === 0);
-    document.getElementById('inverterChartTitle').textContent = selected ? selected.wsName + ' Output' : 'Inverter Output';
+    document.getElementById('inverterChartTitle').textContent = selected ? selected.wsName + ' Data Export' : 'Inverter Data Export';
     document.getElementById('latestInverterValue').textContent = selected?.outputKw != null ? Number(selected.outputKw).toFixed(2) : '--';
     document.getElementById('latestInverterTime').textContent = selected?.lastSeen ? new Date(selected.lastSeen).toLocaleTimeString('en-IN', { hour12: false }) : '--';
-    if (!inverterChart) return;
-    inverterChart.data.labels = rows.map(row => new Date(row.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
-    inverterChart.data.datasets[0].data = rows.map(row => Number(row.powerKw));
-    inverterChart.update('none');
 }
 
 function formatWmosValue(metric, value) {
@@ -819,7 +790,7 @@ function renderMode() {
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
         trendHeading.textContent = 'WMOS / WMAS - Live Data';
-        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMOS graphs; use Download Live Excel for the received live samples.';
+        trendDescription.textContent = 'One common source showing all five live weather measurements. Download Live Excel to export the data.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
@@ -1166,7 +1137,6 @@ function updateAll() {
     refreshLiveStatus();
 }
 
-initCharts();
 seedConfiguredInverters();
 renderMode();
 connectWebSocket();
