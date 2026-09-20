@@ -111,24 +111,33 @@ function wsNumericValue($value) {
     return is_numeric($clean) ? (float)$clean : null;
 }
 
-function walkLiveWeatherValues($node, $context = [], &$weather = null, &$seen = null, $depth = 0) {
+function extractWmosFromNode($node, &$weather = null, $depth = 0) {
     if ($weather === null) $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
-    if ($seen === null) $seen = [];
-    if (!is_array($node) || $depth > 7) return;
+    if (!is_array($node) || $depth > 10) return;
+
     foreach ($node as $key => $value) {
-        $name = strtolower(preg_replace('/[_\-.]+/', ' ', trim((string)$key)));
-        $ctx = strtolower(implode(' ', array_merge($context, [$name])));
-        if (is_array($value)) {
-            walkLiveWeatherValues($value, array_merge($context, [$name]), $weather, $seen, $depth + 1);
-            continue;
-        }
+        $rawKey = strtolower(trim((string)$key));
+        $name = strtolower(preg_replace('/[_\\-.]+/', ' ', $rawKey));
         $num = wsNumericValue($value);
-        if ($num === null) continue;
-        if (preg_match('/radiat|irradiance|pyran|raw data/', $ctx)) $weather['radiation'] = $num;
-        if (preg_match('/pannel|panel|module/',$ctx) && preg_match('/temp|temperature/',$ctx)) $weather['panel_temp'] = $num;
-        if (preg_match('/ambient/',$ctx) && preg_match('/temp|temperature/',$ctx)) $weather['ambient_temp'] = $num;
-        if (preg_match('/wind|windspeed|wind speed|wind velocity|velocity|anemometer/',$ctx)) $weather['wind_speed'] = $num;
-        if (preg_match('/humidity|relative humidity/',$ctx)) $weather['humidity'] = $num;
+
+        // Match the actual WMOS field name first, regardless of nesting.
+        if ($num !== null) {
+            if (preg_match('/^(raw data|radiation|solar radiation|irradiance)$/i', $name) || preg_match('/pyran|pyrimeter/i', $name)) {
+                $weather['radiation'] = $num;
+            } elseif (preg_match('/^(pannel temperature|panel temperature|module temperature|panel temp)$/i', $name)) {
+                $weather['panel_temp'] = $num;
+            } elseif (preg_match('/^(ambient temperature|ambient temp)$/i', $name)) {
+                $weather['ambient_temp'] = $num;
+            } elseif (preg_match('/^(windspeed|wind speed|wind velocity|velocity)$/i', $name)) {
+                $weather['wind_speed'] = $num;
+            } elseif (preg_match('/^(humidity|relative humidity|rh)$/i', $name)) {
+                $weather['humidity'] = $num;
+            }
+        }
+
+        if (is_array($value)) {
+            extractWmosFromNode($value, $weather, $depth + 1);
+        }
     }
 }
 
@@ -137,107 +146,89 @@ function fetchLiveData($plant) {
     if (!$ws->connect('vinobasolar.scadahub.in', 5001)) {
         return ['error' => 'SCADA WebSocket connect failed'];
     }
+
     $ws->sendText(json_encode(['type' => 'get_devices', 'unit_id' => $plant]));
     $ws->sendText(json_encode(['type' => 'subscribe', 'unit_id' => $plant]));
-$frames = []; $start = time();
-    while (time() - $start < 6) {
+
+    $frames = [];
+    $start = microtime(true);
+    // The SCADA gateway can send several device packets before WMOS. Keep the
+    // socket open long enough to receive the weather packet, but stop early
+    // once all five WMOS values have been found.
+    $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
+
+    while (microtime(true) - $start < 8.0) {
         $frame = $ws->readFrame();
         if ($frame && isset($frame['payload']) && $frame['opcode'] === 'text') {
             $j = json_decode($frame['payload'], true);
-            if ($j && is_array($j) && (
-                isset($j['unit_id']) || isset($j['task']) || isset($j['device']) || isset($j['deviceName']) ||
-                isset($j['data']) || isset($j['values']) || isset($j['payload']) || isset($j['result'])
-            )) $frames[] = $j;
+            if (is_array($j)) {
+                $frames[] = $j;
+
+                // Search the entire packet, because WMOS can be nested under
+                // payload/result/data and may not carry a top-level device name.
+                $candidate = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
+                extractWmosFromNode($j, $candidate);
+                foreach ($candidate as $k => $v) {
+                    if ($v !== null) $weather[$k] = $v;
+                }
+
+                if ($weather['radiation'] !== null && $weather['panel_temp'] !== null &&
+                    $weather['ambient_temp'] !== null && $weather['wind_speed'] !== null &&
+                    $weather['humidity'] !== null) {
+                    break;
+                }
+            }
         }
         usleep(2000);
     }
     $ws->close();
 
     $latest = ['vcb'=>[],'trafo'=>[],'wmos'=>[]];
+    foreach ($weather as $k => $v) {
+        if ($v !== null) $latest['wmos'][$k] = $v;
+    }
+
     $invRaw = [];
     foreach ($frames as $f) {
-        $task = strtolower($f['task'] ?? $f['pageName'] ?? $f['type'] ?? '');
-        $dev = strtolower($f['device'] ?? $f['deviceName'] ?? $f['sensor'] ?? '');
+        $task = strtolower((string)($f['task'] ?? $f['pageName'] ?? $f['type'] ?? ''));
+        $dev = strtolower((string)($f['device'] ?? $f['deviceName'] ?? $f['sensor'] ?? ''));
         $v = $f['values'] ?? [];
         if (!is_array($v) && isset($f['data']) && is_array($f['data'])) $v = $f['data'];
-        $weather = ['radiation'=>null,'panel_temp'=>null,'ambient_temp'=>null,'wind_speed'=>null,'humidity'=>null];
-        $frameUnit = trim((string)($f['unit_id'] ?? $f['unitId'] ?? ''));
-        $isWeatherTask = ($task === 'wmos' || $task === 'wmas');
-        $isWeatherDevice = preg_match('/pyran|pyrimeter|pannel|panel|ambient|wind|humid|radiat|irradiance|anemometer|velocity|windspeed/i', $dev.' '.$task);
-        if (($frameUnit === '' || $frameUnit === $plant) && ($isWeatherTask || $isWeatherDevice)) {
-            $values = $f['values'] ?? ($f['data'] ?? []);
-            if (is_array($values)) {
-                $norm = [];
-                foreach ($values as $k => $val) {
-                    $nk = strtolower(preg_replace('/[_\\-.]+/', ' ', trim((string)$k)));
-                    $norm[$nk] = wsNumericValue($val);
-                }
-                if (preg_match('/pyran|pyrimeter|radiat|irradiance/i', $dev)) {
-                    foreach (['raw data','radiation','solar radiation','irradiance'] as $k) if (($norm[$k] ?? null) !== null) { $weather['radiation']=$norm[$k]; break; }
-                } elseif (preg_match('/pannel|panel|module/i', $dev) && preg_match('/temp/i', $dev)) {
-                    foreach (['pannel temperature','panel temperature','module temperature','panel temp'] as $k) if (($norm[$k] ?? null) !== null) { $weather['panel_temp']=$norm[$k]; break; }
-                } elseif (preg_match('/ambient/i', $dev)) {
-                    foreach (['ambient temperature','ambient temp'] as $k) if (($norm[$k] ?? null) !== null) { $weather['ambient_temp']=$norm[$k]; break; }
-                } elseif (preg_match('/wind|anemometer|windspeed/i', $dev)) {
-                    foreach (['windspeed','wind speed','wind velocity','velocity'] as $k) if (($norm[$k] ?? null) !== null) { $weather['wind_speed']=$norm[$k]; break; }
-                } elseif (preg_match('/humid/i', $dev)) {
-                    foreach (['humidity','relative humidity','rh'] as $k) if (($norm[$k] ?? null) !== null) { $weather['humidity']=$norm[$k]; break; }
-                }
-                // Some gateway packets carry all five fields under task=WMOS without a device name.
-                if ($isWeatherTask) {
-                    foreach (['raw data','radiation','solar radiation','irradiance'] as $k) if ($weather['radiation']===null && ($norm[$k]??null)!==null) $weather['radiation']=$norm[$k];
-                    foreach (['pannel temperature','panel temperature','module temperature','panel temp'] as $k) if ($weather['panel_temp']===null && ($norm[$k]??null)!==null) $weather['panel_temp']=$norm[$k];
-                    foreach (['ambient temperature','ambient temp'] as $k) if ($weather['ambient_temp']===null && ($norm[$k]??null)!==null) $weather['ambient_temp']=$norm[$k];
-                    foreach (['windspeed','wind speed','wind velocity','velocity'] as $k) if ($weather['wind_speed']===null && ($norm[$k]??null)!==null) $weather['wind_speed']=$norm[$k];
-                    foreach (['humidity','relative humidity','rh'] as $k) if ($weather['humidity']===null && ($norm[$k]??null)!==null) $weather['humidity']=$norm[$k];
-                }
-            }
-            foreach ($weather as $weatherKey => $weatherValue) {
-                if ($weatherValue !== null) $latest['wmos'][$weatherKey] = $weatherValue;
-            }
-        }
-        if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'inverter' || strpos($dev, 'inverter') !== false)) {
+
+        if (($f['unit_id'] ?? $f['unitId'] ?? $plant) === $plant &&
+            ($task === 'inverter' || strpos($dev, 'inverter') !== false)) {
             $actualName = $f['device'] ?? 'Unknown Inverter';
             if (!isset($invRaw[$actualName])) $invRaw[$actualName] = [];
-            foreach ($v as $vk => $vv) {
-                $vkl = strtolower($vk);
-                if (preg_match('/active.*power|ac.*power|power.*ac|a\.c\..*power/', $vkl) && !preg_match('/reactive|apparent|3\.phase/', $vkl)) {
-                    $invRaw[$actualName]['kw'] = floatval($vv);
-                }
-                if (preg_match('/daily.*generation|daily.*gen/', $vkl)) $invRaw[$actualName]['kwh'] = floatval($vv);
-                if (preg_match('/internal.*temp|ambient.*temp|control.*temp/', $vkl)) $invRaw[$actualName]['temp'] = floatval($vv);
+            if (is_array($v)) foreach ($v as $vk => $vv) {
+                $vkl = strtolower((string)$vk);
+                if (preg_match('/active.*power|ac.*power|power.*ac|a\\.c\\..*power/', $vkl) && !preg_match('/reactive|apparent|3\\.phase/', $vkl)) $invRaw[$actualName]['kw'] = wsNumericValue($vv);
+                if (preg_match('/daily.*generation|daily.*gen/', $vkl)) $invRaw[$actualName]['kwh'] = wsNumericValue($vv);
+                if (preg_match('/internal.*temp|ambient.*temp|control.*temp/', $vkl)) $invRaw[$actualName]['temp'] = wsNumericValue($vv);
             }
         }
-        if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'vcb' || $dev === 'vcb')) {
+        if ((($f['unit_id'] ?? $f['unitId'] ?? $plant) === $plant) &&
+            ($task === 'vcb' || $dev === 'vcb') && is_array($v)) {
             foreach ($v as $vk => $vv) {
-                $vkl = strtolower($vk);
-                if (strpos($vkl, 'active power') !== false && (strpos($vkl, 'total') !== false || strpos($vkl, '3 phase') !== false)) $latest['vcb']['kw'] = floatval($vv);
-                if (strpos($vkl, 'export') !== false && strpos($vkl, 'reactive') === false) $latest['vcb']['kwh_exp'] = floatval($vv);
+                $vkl = strtolower((string)$vk);
+                if (strpos($vkl, 'active power') !== false && (strpos($vkl, 'total') !== false || strpos($vkl, '3 phase') !== false)) $latest['vcb']['kw'] = wsNumericValue($vv);
+                if (strpos($vkl, 'export') !== false && strpos($vkl, 'reactive') === false) $latest['vcb']['kwh_exp'] = wsNumericValue($vv);
             }
-            if (isset($f['virtualTags']['vcb-today'])) {
-                $latest['vcb']['today'] = floatval($f['virtualTags']['vcb-today']['value']);
-            }
+            if (isset($f['virtualTags']['vcb-today']['value'])) $latest['vcb']['today'] = wsNumericValue($f['virtualTags']['vcb-today']['value']);
         }
-        if (($f['unit_id'] === $plant || $plant === 'all') && ($task === 'transformer')) {
+        if ((($f['unit_id'] ?? $f['unitId'] ?? $plant) === $plant) && $task === 'transformer' && is_array($v)) {
             foreach ($v as $vk => $vv) {
-                $vkl = strtolower($vk);
-                if (strpos($vkl, 'oil') !== false) $latest['trafo']['oil'] = floatval($vv);
-                if (strpos($vkl, 'winding') !== false) $latest['trafo']['winding'] = floatval($vv);
+                $vkl = strtolower((string)$vk);
+                if (strpos($vkl, 'oil') !== false) $latest['trafo']['oil'] = wsNumericValue($vv);
+                if (strpos($vkl, 'winding') !== false) $latest['trafo']['winding'] = wsNumericValue($vv);
             }
         }
     }
+
     $invNames = array_keys($invRaw);
     sort($invNames);
-    foreach ($invNames as $idx => $inm) {
-        $latest['inv' . ($idx + 1)] = $invRaw[$inm];
-    }
-    return ['success' => true, 'frames' => count($frames), 'latest' => $latest, 'inv_names' => $invNames];
-}
+    foreach ($invNames as $idx => $inm) $latest['inv' . ($idx + 1)] = $invRaw[$inm];
 
-if (isset($_GET['live']) && $_GET['live'] === '1') {
-    $liveResult = fetchLiveData($plant);
-    echo json_encode($liveResult);
-    exit;
+    return ['success' => true, 'frames' => count($frames), 'latest' => $latest, 'inv_names' => $invNames];
 }
 
 function buildBuckets($type, $date, $hourly = false, $invCount = 2) {
