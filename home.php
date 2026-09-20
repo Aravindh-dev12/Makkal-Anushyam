@@ -937,6 +937,35 @@ const today = localDateKey();
                     }
                 }).catch(() => {});
         }
+        async function fetchLiveWmosApi() {
+            try {
+                const res = await fetch(`api_reports.php?live=1&plant=${encodeURIComponent(currentPlant)}&token=${encodeURIComponent(authToken)}`, {
+                    cache: 'no-store',
+                    headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {}
+                });
+                const data = await res.json();
+                const w = data && data.latest && data.latest.wmos ? data.latest.wmos : null;
+                if (!w) return;
+                const map = {
+                    radiation: 'wmos_rad',
+                    panel_temp: 'wmos_ptemp',
+                    ambient_temp: 'wmos_atemp',
+                    wind_speed: 'wmos_wind',
+                    humidity: 'wmos_hum'
+                };
+                Object.keys(map).forEach(key => {
+                    const n = Number(w[key]);
+                    const el = document.getElementById(map[key]);
+                    if (el && Number.isFinite(n)) el.textContent = key === 'humidity' || key === 'panel_temp' || key === 'ambient_temp' || key === 'wind_speed' ? n.toFixed(1) : n.toFixed(0);
+                });
+                if (Object.keys(map).some(k => Number.isFinite(Number(w[k])))) {
+                    homeWmosLastReceivedAt = Date.now();
+                    const s = document.getElementById('homeWmosStatus');
+                    if (s) s.textContent = 'Live WMOS API';
+                }
+            } catch (_) {}
+        }
+
         function fetchApiFallback() {
             fetch(`api_reports.php?tab=inv_vcb&type=daily&date=${localDateKey()}&plant=${currentPlant}&token=${authToken}`)
                 .then(r => r.json()).then(res => {
