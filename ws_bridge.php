@@ -280,7 +280,7 @@ function insertInverter($conn, $unit, $d) {
     $totalCO2     = floatval($v['total CO2 reduction'] ?? 0);
     $dailyHrs     = floatval($v['daily working hours'] ?? 0);
     $totalHrs     = floatval($v['total working hours'] ?? 0);
-    $stmt->bind_param('ssddddddddddddddddddiis',
+    $stmt->bind_param('ssddddddddddddddddiis',
         $unit, $dev, $pwr,
         $reactivePwr, $pf,
         $voltAB, $voltBC, $voltCA, $freq,
