@@ -887,6 +887,36 @@ function connectWebSocket() {
     socket.onerror = () => {};
 }
 
+async function fetchLiveWmosApi() {
+    try {
+        const res = await fetch(`api_reports.php?live=1&plant=${encodeURIComponent(wsUnitId)}&token=${encodeURIComponent(authToken)}`, {
+            cache: 'no-store',
+            headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {}
+        });
+        const data = await res.json();
+        const w = data && data.latest && data.latest.wmos ? data.latest.wmos : null;
+        if (!w) return;
+        const time = Date.now();
+        const mapping = [
+            ['radiation','Radiation'],
+            ['panel_temp','pannel temperature'],
+            ['ambient_temp','Ambient Temperature'],
+            ['wind_speed','Wind'],
+            ['humidity','Humidity']
+        ];
+        mapping.forEach(([key, device]) => {
+            const n = Number(w[key]);
+            if (Number.isFinite(n)) mergeWmosSample(
+                key === 'radiation' ? 'radiation' :
+                key === 'panel_temp' ? 'panelTemp' :
+                key === 'ambient_temp' ? 'ambientTemp' :
+                key === 'wind_speed' ? 'windSpeed' : 'humidity',
+                n, time, device
+            );
+        });
+    } catch (_) {}
+}
+
 function refreshLiveStatus() {
     const age = state.wmos.lastReceivedAt ? Date.now() - state.wmos.lastReceivedAt : Infinity;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -918,6 +948,8 @@ seedConfiguredInverters();
 renderMode();
 connectWebSocket();
 setInterval(updateAll, 1000);
+setInterval(fetchLiveWmosApi, 5000);
+fetchLiveWmosApi();
 </script>
 </body>
 </html>
