@@ -38,7 +38,7 @@ class SimpleWSClient {
         $address = ($port === 5001 ? 'ssl://' : '') . $host;
         $this->socket = @fsockopen($address, $port, $errno, $errstr, 3);
         if (!$this->socket) return false;
-        stream_set_timeout($this->socket, 10);
+        stream_set_timeout($this->socket, 2);
         stream_set_blocking($this->socket, false);
         $key = base64_encode(random_bytes(16));
         $headers = "GET / HTTP/1.1\r\nHost: {$host}:{$port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $key\r\nSec-WebSocket-Version: 13\r\n\r\n";
