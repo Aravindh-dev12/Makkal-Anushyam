@@ -329,6 +329,25 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
             return h + ':' + String(roundedM).padStart(2, '0');
         }
 
+        async function fetchLiveWmosApi() {
+            try {
+                const res = await fetch(`api_reports.php?live=1&plant=${encodeURIComponent(plant)}&token=${encodeURIComponent(token)}`, {
+                    cache: 'no-store',
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                const data = await res.json();
+                const w = data && data.latest && data.latest.wmos ? data.latest.wmos : null;
+                if (!w) return;
+                captureLiveWeatherValues({
+                    'raw data': w.radiation,
+                    'pannel temperature': w.panel_temp,
+                    'Ambient temperature': w.ambient_temp,
+                    'windspeed': w.wind_speed,
+                    'humidity': w.humidity
+                }, 'WMOS', 'wmos', new Date().toISOString(), plant);
+            } catch (_) {}
+        }
+
         function normalizeWeatherValue(value, depth = 0) {
             if (value === null || value === undefined || value === '' || depth > 5) return null;
             if (typeof value === 'object') {
@@ -991,6 +1010,8 @@ $wsUrl = 'wss://vinobasolar.scadahub.in:5001';
         toggleInputs();
         toggleReportSection();
 
+        fetchLiveWmosApi();
+        setInterval(fetchLiveWmosApi, 5000);
         setInterval(() => {
             if (currentReportSection === 'wmos' && document.getElementById('reportType').value === 'daily' && dateInput.value === localDateKey()) {
                 renderWmosLiveRow();
