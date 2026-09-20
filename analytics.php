@@ -265,7 +265,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
                     <div class="min-w-0">
                         <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Today Data</p>
                         <h1 class="text-2xl font-black text-slate-900" id="trendHeading">Live Source Trend</h1>
-                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS / WMAS source.</p>
+                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS source.</p>
                     </div>
                     <div class="ml-auto flex flex-wrap items-end gap-2 w-full xl:w-auto">
                         <label class="text-xs font-bold text-slate-500 min-w-[260px]">
@@ -273,7 +273,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
                             <select id="analyticsSourceSelect" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Select Inverter / WMOS</option>
                                 <optgroup id="inverterGroup" label="Inverters"></optgroup>
-                                <option value="wmos:all">WMOS / WMAS - All Weather Data</option>
+                                <option value="wmos:all">WMOS - All Weather Data</option>
                             </select>
                         </label>
                         <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -301,7 +301,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
             <section id="wmosSection" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5 hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
-                        <h2 class="text-lg font-black text-slate-900">WMOS / WMAS - All Live Weather Data</h2>
+                        <h2 class="text-lg font-black text-slate-900">WMOS - All Live Weather Data</h2>
                         <p class="text-xs text-slate-500">One common source. Radiation, panel temperature, ambient temperature, wind speed and humidity come from their exact WMOS devices and fields.</p>
                     </div>
                     <div class="text-right">
@@ -339,8 +339,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
                 </div>
 
                 <div class="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
-                    <p class="text-xs font-bold text-slate-600">Live WMOS / WMAS values only.</p>
-                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS / WMAS samples.</p>
+                    <p class="text-xs font-bold text-slate-600">Live WMOS values only.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS samples.</p>
                 </div>
             </section>
         </div>
@@ -789,12 +789,12 @@ function renderMode() {
     inverterSection.classList.toggle('hidden', isWmos);
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
-        trendHeading.textContent = 'WMOS / WMAS - Live Data';
+        trendHeading.textContent = 'WMOS - Live Data';
         trendDescription.textContent = 'One common source showing all five live weather measurements. Download Live Excel to export the data.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
-        trendDescription.textContent = 'Choose an inverter or the single common WMOS / WMAS source.';
+        trendDescription.textContent = 'Choose an inverter or the single common WMOS source.';
         renderInverter();
     }
 }
@@ -929,8 +929,8 @@ function exportWmosExcel() {
     });
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: 'WMOS / WMAS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Full day historical WMOS/WMAS data from 5 AM to 8 PM' },
+        { Field: 'Selected Source', Value: 'WMOS - All Weather Data' },
+        { Field: 'Export Type', Value: 'Full day historical WMOS data from 5 AM to 8 PM' },
         { Field: 'Data Period', Value: '5:00 AM to 8:00 PM (Today)' },
         { Field: 'Actual Weather Samples', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
