@@ -1,5 +1,6 @@
 <?php
 require 'check_auth.php';
+require_once __DIR__ . '/config.php';
 date_default_timezone_set('Asia/Kolkata');
 
 $analyticsWsUrl = 'wss://vinobasolar.scadahub.in:5001';
@@ -48,6 +49,170 @@ try {
 if (!isset($analyticsPlantConfig[$currentPlant])) {
     $currentPlant = array_key_first($analyticsPlantConfig);
 }
+
+// Handle AJAX request for database data export
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_export_data') {
+    // Ensure clean JSON output - no whitespace before headers
+    while (ob_get_level()) ob_end_clean();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    
+    $device = isset($_GET['device']) ? trim($conn->real_escape_string($_GET['device'])) : '';
+    $date = isset($_GET['date']) ? $conn->real_escape_string($_GET['date']) : date('Y-m-d');
+    
+    // Verify database connection
+    if (!isset($conn) || !($conn instanceof mysqli) || $conn->connect_errno) {
+        echo json_encode(['success' => false, 'error' => 'Database connection unavailable']);
+        exit(0);
+    }
+    
+    if (empty($device)) {
+        echo json_encode(['success' => false, 'error' => 'Device parameter required']);
+        exit(0);
+    }
+    
+    // Plant access control
+    $userRole = $user['role'] ?? '';
+    $userPlant = $user['plant_id'] ?? '';
+    $plantFilter = $currentPlant;
+    if ($userRole !== 'admin') {
+        $plantFilter = $userPlant;
+    }
+    $plantClause = ($plantFilter !== 'all' && $plantFilter !== '') ? " AND plant_id = '$plantFilter'" : "";
+    
+    try {
+        $data = [];
+        
+        // Debug logging
+        error_log("Analytics Export: device=$device, date=$date, plant=$plantFilter");
+        
+        if ($device === 'wmos') {
+            // Query WMOS/Weather data - ALL 5 values per second
+            // Try without plant filter first to see if data exists
+            $sql = "SELECT 
+                        recorded_at,
+                        radiation,
+                        panel_temp,
+                        ambient_temp,
+                        wind_speed,
+                        humidity
+                    FROM weather_readings 
+                    WHERE DATE(recorded_at) = '$date' 
+                      AND TIME(recorded_at) BETWEEN '05:00:00' AND '20:00:00'
+                    ORDER BY recorded_at ASC
+                    LIMIT 10000";
+            
+            $result = $conn->query($sql);
+            
+            if ($result === false) {
+                throw new Exception("Query failed: " . $conn->error);
+            }
+            
+            error_log("Analytics Export: weather_readings query returned " . $result->num_rows . " rows");
+            
+            // Fallback to wms_readings if weather_readings is empty
+            if ($result && $result->num_rows === 0) {
+                $sql = "SELECT 
+                            recorded_at,
+                            radiation,
+                            panel_temp,
+                            ambient_temp,
+                            wind_speed,
+                            humidity
+                        FROM wms_readings 
+                        WHERE DATE(recorded_at) = '$date' 
+                          AND TIME(recorded_at) BETWEEN '05:00:00' AND '20:00:00'
+                        ORDER BY recorded_at ASC
+                        LIMIT 10000";
+                $result = $conn->query($sql);
+                
+                if ($result === false) {
+                    throw new Exception("Fallback query failed: " . $conn->error);
+                }
+                
+                error_log("Analytics Export: wms_readings fallback query returned " . $result->num_rows . " rows");
+            }
+            
+            if ($result) {
+                while ($row = $result->fetch_assoc()) {
+                    $data[] = [
+                        'timestamp' => strtotime($row['recorded_at']) * 1000, // milliseconds
+                        'recorded_at' => $row['recorded_at'],
+                        'radiation' => $row['radiation'] !== null ? (float)$row['radiation'] : null,
+                        'panel_temp' => $row['panel_temp'] !== null ? (float)$row['panel_temp'] : null,
+                        'ambient_temp' => $row['ambient_temp'] !== null ? (float)$row['ambient_temp'] : null,
+                        'wind_speed' => $row['wind_speed'] !== null ? (float)$row['wind_speed'] : null,
+                        'humidity' => $row['humidity'] !== null ? (float)$row['humidity'] : null
+                    ];
+                }
+            }
+            
+        } else {
+            // Query Inverter data - all columns per second
+            $sql = "SELECT 
+                        recorded_at,
+                        device_name,
+                        ac_active_power,
+                        daily_generation,
+                        internal_temp,
+                        dc_voltage,
+                        dc_current,
+                        ac_voltage,
+                        ac_current,
+                        frequency
+                    FROM inverter_readings 
+                    WHERE DATE(recorded_at) = '$date' 
+                      AND device_name = '$device'
+                      AND TIME(recorded_at) BETWEEN '05:00:00' AND '20:00:00'
+                    ORDER BY recorded_at ASC
+                    LIMIT 10000";
+            
+            $result = $conn->query($sql);
+            
+            if ($result === false) {
+                throw new Exception("Inverter query failed: " . $conn->error);
+            }
+            
+            if ($result) {
+                while ($row = $result->fetch_assoc()) {
+                    $data[] = [
+                        'timestamp' => strtotime($row['recorded_at']) * 1000, // milliseconds
+                        'recorded_at' => $row['recorded_at'],
+                        'device' => $row['device_name'],
+                        'powerKw' => $row['ac_active_power'] !== null ? (float)$row['ac_active_power'] : null,
+                        'dailyKwh' => $row['daily_generation'] !== null ? (float)$row['daily_generation'] : null,
+                        'temp' => $row['internal_temp'] !== null ? (float)$row['internal_temp'] : null,
+                        'dcVoltage' => $row['dc_voltage'] !== null ? (float)$row['dc_voltage'] : null,
+                        'dcCurrent' => $row['dc_current'] !== null ? (float)$row['dc_current'] : null,
+                        'acVoltage' => $row['ac_voltage'] !== null ? (float)$row['ac_voltage'] : null,
+                        'acCurrent' => $row['ac_current'] !== null ? (float)$row['ac_current'] : null,
+                        'frequency' => $row['frequency'] !== null ? (float)$row['frequency'] : null
+                    ];
+                }
+            }
+        }
+        
+        $response = [
+            'success' => true,
+            'device' => $device,
+            'date' => $date,
+            'plant' => $plantFilter,
+            'rowCount' => count($data),
+            'data' => $data
+        ];
+        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        
+    } catch (Exception $e) {
+        $response = [
+            'success' => false,
+            'error' => 'Database query failed: ' . $e->getMessage()
+        ];
+        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+    
+    // Ensure clean exit with no additional output
+    exit(0);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -72,7 +237,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 <button id="menuBtn" class="md:hidden text-emerald-600 text-2xl">&#9776;</button>
                 <div class="min-w-0">
                     <h2 class="text-xl font-black text-slate-900 tracking-tight truncate" id="headerPlantName">Plant Analytics</h2>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">Live inverter + WMAS telemetry</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">Live inverter + WMOS telemetry</p>
                 </div>
             </div>
             <div class="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -88,18 +253,18 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                     <div class="min-w-0">
                         <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Today Data</p>
                         <h1 class="text-2xl font-black text-slate-900" id="trendHeading">Live Source Trend</h1>
-                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS source.</p>
+                        <p id="trendDescription" class="text-xs text-slate-500 mt-1">Choose an inverter or the single common WMOS / WMAS source.</p>
                     </div>
-                    <div class="ml-auto flex flex-col sm:flex-row sm:items-end gap-2 w-full xl:w-auto">
+                    <div class="ml-auto flex flex-wrap items-end gap-2 w-full xl:w-auto">
                         <label class="text-xs font-bold text-slate-500 min-w-[260px]">
                             <span class="block mb-1">Live Data Source</span>
                             <select id="analyticsSourceSelect" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Select Inverter / WMOS</option>
                                 <optgroup id="inverterGroup" label="Inverters"></optgroup>
-                                <option value="wmos:all">WMAS - All Weather Data</option>
+                                <option value="wmos:all">WMOS / WMAS - All Weather Data</option>
                             </select>
                         </label>
-                        <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <button id="generateAnalyticsExcel" disabled type="button" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
                             <i class="fa-solid fa-file-excel"></i>
                             <span>Download Live Excel</span>
                         </button>
@@ -130,7 +295,7 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
             <section id="wmosSection" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5 hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
-                        <h2 class="text-lg font-black text-slate-900">WMAS - All Live Weather Data</h2>
+                        <h2 class="text-lg font-black text-slate-900">WMOS / WMAS - All Live Weather Data</h2>
                         <p class="text-xs text-slate-500">One common source. Radiation, panel temperature, ambient temperature, wind speed and humidity come from their exact WMOS devices and fields.</p>
                     </div>
                     <div class="text-right">
@@ -142,17 +307,17 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
                     <div class="rounded-xl border border-amber-100 bg-amber-50 p-4">
                         <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">Radiation</p>
-                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmRad">--</span> <span class="text-xs font-bold text-slate-500">W/m²</span></p>
+                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmRad">--</span> <span class="text-xs font-bold text-slate-500">W/m�</span></p>
                         <p class="text-[10px] text-slate-500 mt-1">Pyranometer / raw data</p>
                     </div>
                     <div class="rounded-xl border border-orange-100 bg-orange-50 p-4">
                         <p class="text-[10px] font-black uppercase tracking-widest text-orange-600">Panel Temp</p>
-                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmPanel">--</span> <span class="text-xs font-bold text-slate-500">°C</span></p>
+                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmPanel">--</span> <span class="text-xs font-bold text-slate-500">�C</span></p>
                         <p class="text-[10px] text-slate-500 mt-1">Panel temperature device</p>
                     </div>
                     <div class="rounded-xl border border-sky-100 bg-sky-50 p-4">
                         <p class="text-[10px] font-black uppercase tracking-widest text-sky-600">Amb Temp</p>
-                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmAmbient">--</span> <span class="text-xs font-bold text-slate-500">°C</span></p>
+                        <p class="mt-2 text-2xl font-black text-slate-900"><span id="wmAmbient">--</span> <span class="text-xs font-bold text-slate-500">�C</span></p>
                         <p class="text-[10px] text-slate-500 mt-1">Ambient Temperature device</p>
                     </div>
                     <div class="rounded-xl border border-cyan-100 bg-cyan-50 p-4">
@@ -168,8 +333,8 @@ if (!isset($analyticsPlantConfig[$currentPlant])) {
                 </div>
 
                 <div class="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
-                    <p class="text-xs font-bold text-slate-600">Live WMOS values only.</p>
-                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMAS samples.</p>
+                    <p class="text-xs font-bold text-slate-600">Live WMOS / WMAS values only.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">The five readings above update from the selected plant's live WebSocket telemetry. Download Live Excel exports the received WMOS / WMAS samples.</p>
                 </div>
             </section>
         </div>
@@ -236,24 +401,17 @@ const state = {
         windSpeed: null,
         humidity: null,
         lastReceivedAt: 0,
-        lastSampleAt: 0,
-        sampleTimes: {
-            radiation: 0,
-            panelTemp: 0,
-            ambientTemp: 0,
-            windSpeed: 0,
-            humidity: 0
-        }
+        lastSampleAt: 0
     },
     wmosHistory: []
 };
 
 const WMOS_DEVICES = {
-    radiation: { label: 'Radiation', unit: 'W/m²', decimals: 0, device: 'Pyranometer', keys: ['raw data', 'raw_data', 'radiation', 'solar radiation'] },
-    panelTemp: { label: 'Panel Temp', unit: '°C', decimals: 1, device: 'pannel temperature', keys: ['pannel temperature', 'panel temperature', 'panel_temp', 'paneltemp', 'module temperature'] },
-    ambientTemp: { label: 'Amb Temp', unit: '°C', decimals: 1, device: 'Ambient Temperature', keys: ['Ambient temperature', 'ambient temperature', 'ambient_temp', 'ambienttemp'] },
-    windSpeed: { label: 'Wind Speed', unit: 'm/s', decimals: 1, device: 'Wind', keys: ['windspeed', 'wind speed', 'wind_speed', 'windspeed m/s'] },
-    humidity: { label: 'Humidity', unit: '%RH', decimals: 1, device: 'Humidity', keys: ['humidity', 'relative humidity', 'relative_humidity', 'rh'] }
+    radiation: { label: 'Radiation', unit: 'W/m�', decimals: 0, device: 'Pyranometer', key: 'raw data' },
+    panelTemp: { label: 'Panel Temp', unit: '�C', decimals: 1, device: 'pannel temperature', key: 'pannel temperature' },
+    ambientTemp: { label: 'Amb Temp', unit: '�C', decimals: 1, device: 'Ambient Temperature', key: 'Ambient temperature' },
+    windSpeed: { label: 'Wind Speed', unit: 'm/s', decimals: 1, device: 'Wind', key: 'windspeed' },
+    humidity: { label: 'Humidity', unit: '%RH', decimals: 1, device: 'Humidity', key: 'humidity' }
 };
 
 function normalizeName(v) {
@@ -293,29 +451,38 @@ function todayKey() {
     return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 }
 
+function minuteKey(ts) {
+    const d = new Date(ts);
+    return Math.floor(d.getTime() / 60000);
+}
+
+function isWithinReportingHours(ts) {
+    const d = new Date(ts);
+    const hour = d.getHours();
+    return hour >= 5 && hour < 20; // 5 AM to 8 PM (20:00 = 8 PM)
+}
+
 function deviceToWmosMetric(device) {
     const n = normalizeName(device);
-    if (/pyranometer|pyrimeter|radiation|solar radiation/.test(n)) return 'radiation';
+    if (/pyranometer|pyrimeter/.test(n)) return 'radiation';
     if (/pannel.*temp|panel.*temp|module.*temp/.test(n)) return 'panelTemp';
-    if (/ambient.*temp|ambient temperature/.test(n) || n === 'ambient') return 'ambientTemp';
-    if (/^wind$|wind.*speed|windspeed|anemometer/.test(n)) return 'windSpeed';
-    if (/^humidity$|relative humidity|^rh$/.test(n)) return 'humidity';
+    if (/ambient.*temp/.test(n) || n === 'ambient') return 'ambientTemp';
+    if (/^wind$|wind.*speed|anemometer/.test(n)) return 'windSpeed';
+    if (/^humidity$|relative humidity/.test(n)) return 'humidity';
     return '';
 }
 
 function hasWeatherTask(task) {
-    return /^(wmos|wmas)$/i.test(String(task || '').trim());
+    return /^(wmos|wmas|weather)$/i.test(String(task || '').trim());
 }
 
 function exactWmosValue(metric, values) {
     if (!values || typeof values !== 'object' || Array.isArray(values)) return null;
-    const aliases = WMOS_DEVICES[metric]?.keys || [];
-    const wanted = aliases.map(normalizeName);
+    const wanted = WMOS_DEVICES[metric]?.key || '';
+    const wantedNormalized = normalizeName(wanted);
     for (const [key, raw] of Object.entries(values)) {
-        const normalizedKey = normalizeName(key);
-        if (!wanted.includes(normalizedKey)) continue;
-        const value = parseNumber(raw);
-        if (value !== null) return value;
+        if (normalizeName(key) !== wantedNormalized) continue;
+        return parseNumber(raw);
     }
     return null;
 }
@@ -369,7 +536,7 @@ function extractInverter(values) {
         const v = parseNumber(raw);
         if (v === null) continue;
         if (power === null && /active.*power|ac.*power|power.*ac|a c .*power/.test(n) && !/reactive|apparent|limit|ratio|3 phase/.test(n)) power = v;
-        if (daily === null && /daily.*generation|daily.*gen|today.*generation|today.*gen|daily.*energy|today.*energy|energy.*today|generation.*today|generation.*daily/.test(n)) daily = v;
+        if (daily === null && /daily.*generation|daily.*gen|today.*generation|today.*gen/.test(n)) daily = v;
     }
     return { power, daily };
 }
@@ -384,8 +551,13 @@ function addInverterSample(name, values, sourceTime, task = '') {
     const reading = extractInverter(values);
     if (reading.power === null && reading.daily === null) return;
     const time = telemetryDate(sourceTime);
+    const timestamp = time.getTime();
+    
+    // Only store data within reporting hours (5 AM to 8 PM)
+    if (!isWithinReportingHours(timestamp)) return;
+    
     const sample = {
-        timestamp: time.getTime(),
+        timestamp: timestamp,
         powerKw: reading.power,
         dailyKwh: reading.daily,
         device: state.inverters[key].wsName,
@@ -393,26 +565,32 @@ function addInverterSample(name, values, sourceTime, task = '') {
     };
     state.inverters[key].outputKw = reading.power ?? state.inverters[key].outputKw;
     state.inverters[key].dailyGen = reading.daily ?? state.inverters[key].dailyGen;
-    state.inverters[key].lastSeen = time.getTime();
+    state.inverters[key].lastSeen = timestamp;
     state.inverters[key].status = 'Live';
     if (!state.inverterHistory[key]) state.inverterHistory[key] = [];
     const arr = state.inverterHistory[key];
+    
+    // Store every second's data - no merging, just check for exact duplicate timestamp
     const idx = arr.findIndex(row => row.timestamp === sample.timestamp);
     if (idx >= 0) arr[idx] = sample; else arr.push(sample);
     arr.sort((a, b) => a.timestamp - b.timestamp);
-    if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+    
+    // Keep more samples for second-level data throughout the day
+    if (arr.length > 54000) arr.splice(0, arr.length - 54000); // 15 hours * 60 min * 60 sec = 54000 samples
 }
 
 function mergeWmosSample(metric, value, sourceTime, device) {
     const time = telemetryDate(sourceTime);
     const timestamp = time.getTime();
+    
+    // Only store data within reporting hours (5 AM to 8 PM)
+    if (!isWithinReportingHours(timestamp)) return;
+    
     state.wmos[metric] = value;
     state.wmos.lastReceivedAt = Date.now();
     state.wmos.lastSampleAt = timestamp;
-    state.wmos.sampleTimes[metric] = timestamp;
-    // Keep the exact telemetry timestamp used by the live analytics data.
-    // Do not merge samples by minute: if sensors report at different seconds,
-    // Excel must preserve those separate seconds exactly.
+    
+    // Store every second's data - no minute merging
     let row = state.wmosHistory.find(item => item.timestamp === timestamp);
     if (!row) {
         row = { timestamp: timestamp };
@@ -420,26 +598,24 @@ function mergeWmosSample(metric, value, sourceTime, device) {
     }
     row[metric] = value;
     row[metric + '_device'] = device || WMOS_DEVICES[metric].device;
-    row[metric + '_sample_time'] = timestamp;
+    
     state.wmosHistory.sort((a, b) => a.timestamp - b.timestamp);
-    if (state.wmosHistory.length > 5000) state.wmosHistory.splice(0, state.wmosHistory.length - 5000);
+    
+    // Keep more samples for second-level data throughout the day
+    if (state.wmosHistory.length > 54000) state.wmosHistory.splice(0, state.wmosHistory.length - 54000); // 15 hours * 60 min * 60 sec
 }
 
 function consumeWmosFrame(values, device, task, sourceTime) {
     if (!hasWeatherTask(task)) return false;
-    let metric = deviceToWmosMetric(device);
-    if (!metric) {
-        const keys = Object.keys(values || {}).map(normalizeName);
-        if (keys.some(k => ['raw data','raw_data','radiation','solar radiation'].includes(k))) metric = 'radiation';
-        else if (keys.some(k => ['pannel temperature','panel temperature','panel_temp','paneltemp','module temperature'].includes(k))) metric = 'panelTemp';
-        else if (keys.some(k => ['ambient temperature','ambient_temp','ambienttemp'].includes(k))) metric = 'ambientTemp';
-        else if (keys.some(k => ['windspeed','wind speed','wind_speed','windspeed m/s'].includes(k))) metric = 'windSpeed';
-        else if (keys.some(k => ['humidity','relative humidity','relative_humidity','rh'].includes(k))) metric = 'humidity';
-    }
+    const metric = deviceToWmosMetric(device);
     if (!metric) return false;
     const value = exactWmosValue(metric, values);
-    // A WMOS device may send unrelated fields in a frame. Do not clear an
-    // already received live value just because the exact field is absent.
+    if (metric === 'panelTemp' && value === null) {
+        state.wmos.panelTemp = null;
+        state.wmos.lastReceivedAt = Date.now();
+        state.wmos.lastSampleAt = telemetryDate(sourceTime).getTime();
+        return true;
+    }
     if (value === null) return false;
     mergeWmosSample(metric, value, sourceTime, device);
     return true;
@@ -498,6 +674,52 @@ function consumeLiveMessage(message) {
     const task = message.task || message.pageName || '';
     const device = message.device || message.deviceName || message.sensor || '';
     const time = message.time || message.timestamp || message.ts || message.recorded_at || '';
+
+    // Handle daily_data_result - this is historical data from database
+    if (message.type === 'daily_data_result') {
+        console.log('?? RAW daily_data_result received:', {
+            type: message.type,
+            device: device,
+            task: task,
+            dataLength: Array.isArray(message.data) ? message.data.length : 0,
+            fullMessage: message
+        });
+        
+        const rows = Array.isArray(message.data) ? message.data : [];
+        console.log('?? Processing', rows.length, 'rows from daily_data_result');
+        
+        rows.forEach((row, index) => {
+            if (!row || typeof row !== 'object') return;
+            const rowDevice = row.device || row.deviceName || row.sensor || row.name || device;
+            const rowTask = row.task || row.pageName || task;
+            const rowTime = row.time || row.timestamp || row.ts || row.recorded_at || '';
+            const rowValues = row.values && typeof row.values === 'object' && !Array.isArray(row.values) ? row.values : {};
+            
+            if (index < 5) {
+                console.log('?? Sample row', index, ':', {
+                    device: rowDevice,
+                    task: rowTask,
+                    time: rowTime,
+                    values: rowValues
+                });
+            }
+            
+            if (rowValues && Object.keys(rowValues).length > 0) {
+                if (hasWeatherTask(rowTask)) {
+                    consumeWmosFrame(rowValues, rowDevice, rowTask, rowTime);
+                } else if (isInverterDevice(rowDevice, rowTask) || /^inverter$/i.test(String(rowTask || ''))) {
+                    addInverterSample(rowDevice, rowValues, rowTime, rowTask);
+                }
+            }
+        });
+        
+        console.log('?? After processing - Inverter history:', Object.keys(state.inverterHistory).map(k => ({
+            inverter: k,
+            samples: state.inverterHistory[k].length
+        })));
+        console.log('?? After processing - WMOS history samples:', state.wmosHistory.length);
+        return;
+    }
 
     if (message.values && typeof message.values === 'object' && !Array.isArray(message.values)) {
         if (hasWeatherTask(task)) consumeWmosFrame(message.values, device, task, time);
@@ -596,12 +818,12 @@ function renderMode() {
     inverterSection.classList.toggle('hidden', isWmos);
     wmosSection.classList.toggle('hidden', !isWmos);
     if (isWmos) {
-        trendHeading.textContent = 'WMAS - Live Data';
-        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMAS graphs; use Download Live Excel for the received live samples.';
+        trendHeading.textContent = 'WMOS / WMAS - Live Data';
+        trendDescription.textContent = 'One common source showing all five live weather measurements. No WMOS graphs; use Download Live Excel for the received live samples.';
         renderWmos();
     } else {
         trendHeading.textContent = state.selectedInverter ? 'Inverter Live Data' : 'Live Source Trend';
-        trendDescription.textContent = 'Choose an inverter or the single common WMOS source.';
+        trendDescription.textContent = 'Choose an inverter or the single common WMOS / WMAS source.';
         renderInverter();
     }
 }
@@ -626,17 +848,38 @@ function addDailyValue(value, time) {
 function requestDailyInverter() {
     if (!socket || socket.readyState !== WebSocket.OPEN || !state.selectedInverter) return;
     const inv = state.inverters[state.selectedInverter];
-    socket.send(JSON.stringify({ type: 'get_daily_data', unit_id: wsUnitId, device: inv?.wsName || state.selectedInverter, date: todayKey() }));
+    const today = todayKey();
+    const request = { 
+        type: 'get_daily_data', 
+        unit_id: wsUnitId, 
+        device: inv?.wsName || state.selectedInverter, 
+        date: today,
+        start_time: '05:00:00',
+        end_time: '20:00:00'
+    };
+    console.log('?? Requesting inverter daily data:', request);
+    socket.send(JSON.stringify(request));
 }
 
 function requestDailyWmos() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const today = todayKey();
     Object.values(WMOS_DEVICES).forEach(src => {
-        socket.send(JSON.stringify({ type: 'get_daily_data', unit_id: wsUnitId, task: 'WMOS', device: src.device, date: todayKey() }));
+        const request = { 
+            type: 'get_daily_data', 
+            unit_id: wsUnitId, 
+            task: 'WMOS', 
+            device: src.device, 
+            date: today,
+            start_time: '05:00:00',
+            end_time: '20:00:00'
+        };
+        console.log('?? Requesting WMOS daily data:', request);
+        socket.send(JSON.stringify(request));
     });
 }
 
-function waitForExportData(test, timeout = 3500) {
+function waitForExportData(test, timeout = 10000) {
     return new Promise(resolve => {
         if (test()) return resolve(true);
         const start = Date.now();
@@ -667,170 +910,178 @@ function xlsxWorkbook(sheetName, rows, summary) {
 
 function exportInverterExcel() {
     if (!state.selectedInverter) return false;
-
-    const selected = state.inverters[state.selectedInverter];
-    const history = selectedInverterHistory().slice().sort((a, b) => a.timestamp - b.timestamp);
-
-    const rows = history.map(row => {
+    const rows = selectedInverterHistory().sort((a, b) => a.timestamp - b.timestamp).map(row => {
+        const d = new Date(row.timestamp);
         const output = row.powerKw == null ? '' : Number(row.powerKw).toFixed(3);
         const daily = row.dailyKwh == null ? '' : Number(row.dailyKwh).toFixed(3);
         return {
-            Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
-            Time: new Date(row.timestamp).toLocaleTimeString('en-IN', { hour12: false }),
+            Date: d.toLocaleDateString('en-IN'),
+            Time: d.toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             Inverter: row.device,
             'Output (kW)': output,
             'Daily Energy (kWh)': daily,
-            'Sample Status': 'Live WebSocket sample'
+            'Sample Status': 'Historical data (5 AM - 8 PM)'
         };
     });
-
-    // Export the actual newest telemetry sample time, not the button-click time.
-    // Output power and daily energy are kept as separate rows.
-    const liveTime = selected?.lastSeen ? new Date(selected.lastSeen) : new Date();
-    const snapshot = [
-        {
-            Date: liveTime.toLocaleDateString('en-IN'),
-            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
-            Inverter: selected?.wsName || state.selectedInverter,
-            Parameter: 'Output Power',
-            Value: selected?.outputKw == null ? '' : Number(selected.outputKw).toFixed(3),
-            Unit: 'kW',
-            'Sample Status': selected?.lastSeen ? 'Fresh live WebSocket value' : 'No live value received'
-        },
-        {
-            Date: liveTime.toLocaleDateString('en-IN'),
-            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
-            Inverter: selected?.wsName || state.selectedInverter,
-            Parameter: 'Daily Energy',
-            Value: selected?.dailyGen == null ? '' : Number(selected.dailyGen).toFixed(3),
-            Unit: 'kWh',
-            'Sample Status': selected?.lastSeen ? 'Fresh live WebSocket value' : 'No live value received'
-        }
-    ];
-
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: selected?.wsName || state.selectedInverter },
-        { Field: 'Export Type', Value: 'Live WebSocket data received by Analytics' },
-        { Field: 'Latest Live Reading', Value: selected?.lastSeen ? new Date(selected.lastSeen).toLocaleString('en-IN', { hour12: false }) : 'Not received' },
-        { Field: 'Current Snapshot', Value: 'Latest inverter values shown as separate parameter rows' },
-        { Field: 'Historical Live Samples', Value: rows.length },
+        { Field: 'Selected Source', Value: state.inverters[state.selectedInverter]?.wsName || state.selectedInverter },
+        { Field: 'Export Type', Value: 'Full day historical data from 5 AM to 8 PM' },
+        { Field: 'Data Period', Value: '5:00 AM to 8:00 PM (Today)' },
+        { Field: 'Actual Samples', Value: rows.length },
+        { Field: 'Sample Frequency', Value: 'All available data points within reporting hours' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
-
-    const wb = XLSX.utils.book_new();
-    const summarySheet = XLSX.utils.json_to_sheet(summary);
-    summarySheet['!cols'] = [{ wch: 28 }, { wch: 48 }];
-    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
-
-    const liveSheet = XLSX.utils.json_to_sheet(snapshot);
-    liveSheet['!cols'] = Object.keys(snapshot[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
-    XLSX.utils.book_append_sheet(wb, liveSheet, 'Current Live');
-
-    if (rows.length) {
-        const historySheet = XLSX.utils.json_to_sheet(rows);
-        historySheet['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
-        XLSX.utils.book_append_sheet(wb, historySheet, 'Live History');
-    }
-
-    XLSX.writeFile(wb, currentPlant + '_Inverter_Live_' + todayKey() + '.xlsx');
-    return true;
+    return xlsxWorkbook('Inverter Live Data', rows, summary);
 }
 
 function exportWmosExcel() {
     const sourceRows = state.wmosHistory.slice().sort((a, b) => a.timestamp - b.timestamp);
-
-    // Export each WMOS sensor on its own row using that sensor's actual
-    // latest telemetry timestamp. The five devices may report seconds apart.
-    const snapshot = Object.keys(WMOS_DEVICES).map(metric => {
-        const info = WMOS_DEVICES[metric];
-        const sampleTime = state.wmos.sampleTimes[metric] || state.wmos.lastSampleAt || Date.now();
-        const liveTime = new Date(sampleTime);
+    if (!sourceRows.length) return false;
+    const rows = sourceRows.map(row => {
+        const d = new Date(row.timestamp);
         return {
-            Date: liveTime.toLocaleDateString('en-IN'),
-            Time: liveTime.toLocaleTimeString('en-IN', { hour12: false }),
-            'WMOS Data': info.label,
-            Device: info.device,
-            Value: state.wmos[metric] == null ? '' : Number(state.wmos[metric]).toFixed(info.decimals),
-            Unit: info.unit,
-            'Reading Type': state.wmos.sampleTimes[metric] ? 'Fresh live WebSocket value' : 'No live value received'
+            Date: d.toLocaleDateString('en-IN'),
+            Time: d.toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            'Radiation (W/m�)': row.radiation != null ? Number(row.radiation).toFixed(2) : '',
+            'Panel Temperature (�C)': row.panelTemp != null ? Number(row.panelTemp).toFixed(2) : '',
+            'Ambient Temperature (�C)': row.ambientTemp != null ? Number(row.ambientTemp).toFixed(2) : '',
+            'Wind Speed (m/s)': row.windSpeed != null ? Number(row.windSpeed).toFixed(2) : '',
+            'Humidity (%RH)': row.humidity != null ? Number(row.humidity).toFixed(2) : '',
+            'Radiation Device': row.radiation_device ?? '',
+            'Panel Device': row.panelTemp_device ?? '',
+            'Ambient Device': row.ambientTemp_device ?? '',
+            'Wind Device': row.windSpeed_device ?? '',
+            'Humidity Device': row.humidity_device ?? '',
+            'Reading Type': 'Historical data (5 AM - 8 PM)'
         };
     });
-
-    const rows = sourceRows.map(row => ({
-        Date: new Date(row.timestamp).toLocaleDateString('en-IN'),
-        Time: new Date(row.timestamp).toLocaleTimeString('en-IN', { hour12: false }),
-        'Radiation (W/m²)': row.radiation ?? '',
-        'Panel Temperature (°C)': row.panelTemp ?? '',
-        'Ambient Temperature (°C)': row.ambientTemp ?? '',
-        'Wind Speed (m/s)': row.windSpeed ?? '',
-        'Humidity (%RH)': row.humidity ?? '',
-        'Radiation Device': row.radiation_device ?? '',
-        'Panel Device': row.panelTemp_device ?? '',
-        'Ambient Device': row.ambientTemp_device ?? '',
-        'Wind Device': row.windSpeed_device ?? '',
-        'Humidity Device': row.humidity_device ?? '',
-        'Reading Type': 'Actual live WebSocket sample at exact telemetry time'
-    }));
-
-    const hasLiveValue = Object.values(state.wmos).some(v => typeof v === 'number' && Number.isFinite(v));
-    if (!hasLiveValue && !sourceRows.length) return false;
-
     const summary = [
         { Field: 'Plant', Value: cfg.name || currentPlant },
-        { Field: 'Selected Source', Value: 'WMAS - All Weather Data' },
-        { Field: 'Export Type', Value: 'Live WebSocket WMAS data received by Analytics' },
-        { Field: 'Current Snapshot', Value: 'Five WMOS measurements shown as five separate rows' },
-        { Field: 'Historical Weather Rows', Value: rows.length },
+        { Field: 'Selected Source', Value: 'WMOS / WMAS - All Weather Data' },
+        { Field: 'Export Type', Value: 'Full day historical WMOS/WMAS data from 5 AM to 8 PM' },
+        { Field: 'Data Period', Value: '5:00 AM to 8:00 PM (Today)' },
+        { Field: 'Actual Weather Samples', Value: rows.length },
         { Field: 'Metrics', Value: 'Radiation, Panel Temp, Ambient Temp, Wind Speed, Humidity' },
+        { Field: 'Sample Frequency', Value: 'All available data points within reporting hours' },
         { Field: 'Generated At', Value: new Date().toLocaleString('en-IN', { hour12: false }) }
     ];
-
-    const wb = XLSX.utils.book_new();
-    const summarySheet = XLSX.utils.json_to_sheet(summary);
-    summarySheet['!cols'] = [{ wch: 28 }, { wch: 52 }];
-    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
-
-    const liveSheet = XLSX.utils.json_to_sheet(snapshot);
-    liveSheet['!cols'] = Object.keys(snapshot[0]).map(k => ({ wch: Math.min(34, Math.max(14, k.length + 2)) }));
-    XLSX.utils.book_append_sheet(wb, liveSheet, 'Current Live');
-
-    if (rows.length) {
-        const historySheet = XLSX.utils.json_to_sheet(rows);
-        historySheet['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.min(32, Math.max(14, k.length + 2)) }));
-        XLSX.utils.book_append_sheet(wb, historySheet, 'Live History');
-    }
-
-    XLSX.writeFile(wb, currentPlant + '_WMOS_All_Live_' + todayKey() + '.xlsx');
-    return true;
+    return xlsxWorkbook('WMOS All Live Data', rows, summary);
 }
 
 async function downloadSelectedExcel() {
     if (!selectedSource) return;
     const old = generateButton.innerHTML;
     generateButton.disabled = true;
-    generateButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Waiting for fresh live data...</span>';
+    generateButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Fetching data from database...</span>';
+    
     try {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        
+        // Determine device parameter
+        const device = selectedSource === 'wmos:all' ? 'wmos' : selectedSource;
+        
+        console.log('?? Fetching database data for:', device, 'Date:', today);
+        
+        // Fetch data from internal database API
+        const url = `analytics.php?ajax=get_export_data&device=${encodeURIComponent(device)}&date=${today}&plant=${currentPlant}`;
+        console.log('?? API URL:', url);
+        
+        const response = await fetch(url);
+        console.log('?? Response status:', response.status, response.statusText);
+        
+        // Check if response is ok
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Get response text first to debug
+        const responseText = await response.text();
+        console.log('?? Raw response text:', responseText.substring(0, 500));
+        
+        // Check if response is empty
+        if (!responseText || responseText.trim() === '') {
+            throw new Error('Empty response from server');
+        }
+        
+        // Try to parse JSON
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error('?? JSON Parse Error:', parseError);
+            console.error('?? Response text:', responseText);
+            throw new Error('Failed to parse JSON response: ' + parseError.message);
+        }
+        
+        console.log('?? Database API response:', {
+            success: result.success,
+            device: result.device,
+            rowCount: result.rowCount,
+            hasData: !!result.data,
+            dataLength: result.data ? result.data.length : 0,
+            firstRow: result.data && result.data[0] ? result.data[0] : null,
+            error: result.error || null
+        });
+        
+        // ALERT for visibility
+        alert(`Database query returned ${result.rowCount || 0} rows.\nCheck console for details.`);
+        
+        if (!result.success || !result.data || result.data.length === 0) {
+            alert(`No data available for ${device} on ${today} (5 AM - 8 PM).\n${result.error || 'No records found in database.'}`);
+            return;
+        }
+        
+        // Populate history arrays from database data
         if (selectedSource === 'wmos:all') {
-            const before = Object.fromEntries(
-                Object.keys(WMOS_DEVICES).map(metric => [metric, state.wmos.sampleTimes[metric] || 0])
-            );
-            requestDailyWmos();
-            await waitForExportData(() =>
-                Object.keys(WMOS_DEVICES).some(metric =>
-                    (state.wmos.sampleTimes[metric] || 0) > before[metric]
-                )
-            );
-            if (!exportWmosExcel()) alert('No live WMOS samples are available yet.');
+            state.wmosHistory = result.data.map(row => ({
+                timestamp: row.timestamp,
+                radiation: row.radiation,
+                panelTemp: row.panel_temp,
+                ambientTemp: row.ambient_temp,
+                windSpeed: row.wind_speed,
+                humidity: row.humidity,
+                radiation_device: 'Database',
+                panelTemp_device: 'Database',
+                ambientTemp_device: 'Database',
+                windSpeed_device: 'Database',
+                humidity_device: 'Database'
+            }));
+            console.log('? WMOS data loaded from database:', state.wmosHistory.length, 'samples');
+            console.log('?? First 3 WMOS rows:', state.wmosHistory.slice(0, 3));
+            if (!exportWmosExcel()) {
+                alert('Failed to generate WMOS Excel file.');
+            } else {
+                console.log('?? WMOS Excel generated successfully with', state.wmosHistory.length, 'rows!');
+            }
         } else {
             state.selectedInverter = selectedSource;
-            const before = state.inverters[state.selectedInverter]?.lastSeen || 0;
-            requestDailyInverter();
-            await waitForExportData(() =>
-                (state.inverters[state.selectedInverter]?.lastSeen || 0) > before
-            );
-            if (!exportInverterExcel()) alert('No live inverter samples are available yet.');
+            state.inverterHistory[state.selectedInverter] = result.data.map(row => ({
+                timestamp: row.timestamp,
+                device: row.device,
+                powerKw: row.powerKw,
+                dailyKwh: row.dailyKwh,
+                temp: row.temp,
+                values: {
+                    dcVoltage: row.dcVoltage,
+                    dcCurrent: row.dcCurrent,
+                    acVoltage: row.acVoltage,
+                    acCurrent: row.acCurrent,
+                    frequency: row.frequency
+                }
+            }));
+            console.log('? Inverter data loaded from database:', state.inverterHistory[state.selectedInverter].length, 'samples');
+            console.log('?? First 3 inverter rows:', state.inverterHistory[state.selectedInverter].slice(0, 3));
+            if (!exportInverterExcel()) {
+                alert('Failed to generate inverter Excel file.');
+            } else {
+                console.log('?? Inverter Excel generated successfully with', state.inverterHistory[state.selectedInverter].length, 'rows!');
+            }
         }
+        
+    } catch (error) {
+        console.error('? Error fetching data:', error);
+        alert('Failed to fetch data: ' + error.message);
     } finally {
         generateButton.innerHTML = old;
         updateGenerateButton();
@@ -839,21 +1090,15 @@ async function downloadSelectedExcel() {
 
 sourceSelect.addEventListener('change', () => {
     selectedSource = sourceSelect.value || '';
-
-    // Switch the visible panel first so WMOS data is shown immediately.
-    // Network requests happen after the UI mode changes and never replace
-    // or move the Download Live Excel button.
     if (selectedSource === 'wmos:all') {
         state.selectedInverter = '';
-        renderMode();
-        updateGenerateButton();
         requestDailyWmos();
     } else {
         state.selectedInverter = selectedSource;
-        renderMode();
-        updateGenerateButton();
         requestDailyInverter();
     }
+    renderMode();
+    updateGenerateButton();
 });
 
 generateButton.addEventListener('click', downloadSelectedExcel);
@@ -874,6 +1119,14 @@ function connectWebSocket() {
     socket.onmessage = event => {
         try {
             const message = JSON.parse(event.data);
+            console.log('?? WebSocket message received:', {
+                type: message.type,
+                task: message.task || message.pageName,
+                device: message.device || message.deviceName,
+                hasData: !!message.data,
+                dataIsArray: Array.isArray(message.data),
+                dataLength: Array.isArray(message.data) ? message.data.length : 'N/A'
+            });
             consumeLiveMessage(message);
             populateInverterOptions();
         } catch (_) {}
@@ -885,36 +1138,6 @@ function connectWebSocket() {
         reconnectTimer = setTimeout(connectWebSocket, 2500);
     };
     socket.onerror = () => {};
-}
-
-async function fetchLiveWmosApi() {
-    try {
-        const res = await fetch(`api_reports.php?live=1&plant=${encodeURIComponent(wsUnitId)}&token=${encodeURIComponent(authToken)}`, {
-            cache: 'no-store',
-            headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {}
-        });
-        const data = await res.json();
-        const w = data && data.latest && data.latest.wmos ? data.latest.wmos : null;
-        if (!w) return;
-        const time = Date.now();
-        const mapping = [
-            ['radiation','Radiation'],
-            ['panel_temp','pannel temperature'],
-            ['ambient_temp','Ambient Temperature'],
-            ['wind_speed','Wind'],
-            ['humidity','Humidity']
-        ];
-        mapping.forEach(([key, device]) => {
-            const n = Number(w[key]);
-            if (Number.isFinite(n)) mergeWmosSample(
-                key === 'radiation' ? 'radiation' :
-                key === 'panel_temp' ? 'panelTemp' :
-                key === 'ambient_temp' ? 'ambientTemp' :
-                key === 'wind_speed' ? 'windSpeed' : 'humidity',
-                n, time, device
-            );
-        });
-    } catch (_) {}
 }
 
 function refreshLiveStatus() {
@@ -948,8 +1171,6 @@ seedConfiguredInverters();
 renderMode();
 connectWebSocket();
 setInterval(updateAll, 1000);
-setInterval(fetchLiveWmosApi, 5000);
-fetchLiveWmosApi();
 </script>
 </body>
 </html>
